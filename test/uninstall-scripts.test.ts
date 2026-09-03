@@ -25,3 +25,13 @@ describe("uninstall scripts", () => {
     expect(script).toContain("stty -echo -icanon")
   })
 })
+
+describe("Windows installer", () => {
+  test("broadcasts PATH changes and verifies the custom command", async () => {
+    const script = await readFile(resolve(root, "install-windows.ps1"), "utf8")
+    expect(script).toContain("Publish-EnvironmentChange")
+    expect(script).toContain("SendMessageTimeout")
+    expect(script).toContain("Get-Command $customName")
+    expect(script).toContain("fully close and reopen your terminal application")
+  })
+})

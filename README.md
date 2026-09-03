@@ -1,12 +1,26 @@
 # cli-toolkit-fw
 
-Current version: `0.2.0`
+Current version: `0.2.1`
 
 `cli-toolkit-fw` 是一个可由 AI 协助定制的交互式 CLI 工具集合框架。它保留 OpenCode 风格的输入、命令补全、列表选择、导航、历史输出和鼠标滚动，但运行时不连接 LLM。
 
 用户只需向代码型 AI 描述想要的工具和命令。AI 按照仓库中的 `AGENTS.md` 和 `docs/` 规范生成本地 TypeScript 工具，之后所有操作都由本地代码直接执行。
 
 本仓库只包含通用框架，不包含任何特定服务、账号、额度查询、配置切换或进程管理业务。
+
+## 界面预览
+
+### 主界面与命令提示
+
+输入 `/` 后显示当前作用域的命令，可以使用方向键选择、`Tab` 补全并按 `Enter` 执行。
+
+![主界面与命令提示](docs/assets/readme/home-command-palette.png)
+
+### 自动发现本地扩展
+
+把工具放入 `extensions/` 后，框架会在 `/tools` 中自动显示。下面的业务工具仅用于演示本地扩展效果，不包含在公共仓库中。
+
+![本地扩展选择器](docs/assets/readme/extension-selector.png)
 
 ## 安装
 
@@ -24,6 +38,10 @@ chmod +x ./install.sh
 ```
 
 安装时会要求输入命令与 UI 名称，直接回车则使用默认名称 `toolkit`。例如输入 `mytools` 后，启动命令和界面标题都会变成 `mytools`。
+
+![安装时自定义命令和界面名称](docs/assets/readme/install-custom-name.png)
+
+Windows 安装器会广播 PATH 更新并验证命令入口。如果 Windows Terminal 在安装前已经运行，仅新建标签页可能仍继承旧 PATH；需要关闭全部 Windows Terminal 窗口后重新打开。
 
 安装完成并重新打开终端后，使用安装时选择的名称运行。默认是：
 

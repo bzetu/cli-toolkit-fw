@@ -40,6 +40,40 @@ function Wait-ForExitKey {
     }
 }
 
+function Publish-EnvironmentChange {
+    if (-not ('CliToolkitEnvironmentNotifier' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class CliToolkitEnvironmentNotifier
+{
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd,
+        uint Msg,
+        UIntPtr wParam,
+        string lParam,
+        uint fuFlags,
+        uint uTimeout,
+        out UIntPtr lpdwResult
+    );
+}
+'@
+    }
+
+    $result = [UIntPtr]::Zero
+    [void][CliToolkitEnvironmentNotifier]::SendMessageTimeout(
+        [IntPtr]0xffff,
+        0x001A,
+        [UIntPtr]::Zero,
+        'Environment',
+        0x0002,
+        5000,
+        [ref]$result
+    )
+}
+
 if (-not (Test-Path -LiteralPath $bootstrapPath -PathType Leaf)) {
     throw "Framework launcher not found: $bootstrapPath"
 }
@@ -107,6 +141,12 @@ $env:CLI_TOOLKIT_FW_BIN = $launcherDir
 
 $pathChanged = Add-UserPathEntry $launcherDir
 $env:Path = "$launcherDir;$env:Path"
+Publish-EnvironmentChange
+
+$resolvedCommand = Get-Command $customName -ErrorAction SilentlyContinue
+if (-not $resolvedCommand -or [IO.Path]::GetFullPath($resolvedCommand.Source) -ne [IO.Path]::GetFullPath($customLauncher)) {
+    throw "The command '$customName' was installed but could not be resolved from the updated PATH."
+}
 
 Write-Host ''
 Write-Host "$customName installed successfully." -ForegroundColor Green
@@ -116,7 +156,7 @@ Write-Host "Install directory: $projectDir"
 Write-Host "Log file: $(Join-Path $env:LOCALAPPDATA 'cli-toolkit-fw\logs\cli-toolkit-fw.log')"
 if ($oldPathRemoved) { Write-Host "Removed previous PATH entry: $previousBin" }
 if ($pathChanged) {
-    Write-Host "PATH was updated. Open a new terminal before running: $customName"
+    Write-Host "PATH was updated. Run now in this PowerShell window, or fully close and reopen your terminal application: $customName"
 } else {
     Write-Host "PATH is already configured. Run: $customName"
 }

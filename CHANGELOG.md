@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file. Versions follow Semantic Versioning.
 
+## [0.2.1] - 2026-09-03
+
+### Added
+
+- README screenshots for installation, the command palette, and automatic local-extension discovery.
+- A test that verifies every README screenshot reference resolves to a tracked image asset.
+
+### Fixed
+
+- Windows installation now broadcasts environment changes and verifies the selected command against the updated PATH.
+- Windows Terminal restart guidance now distinguishes closing the whole application from opening a new tab with a stale environment.
+
 ## [0.2.0] - 2026-09-03
 
 ### Added
@@ -32,5 +44,6 @@ All notable changes to this project are documented in this file. Versions follow
 - Initial OpenCode-style interactive CLI framework.
 - Tool and command contracts, scoped navigation, command completion, selections, tables, logging, tests, and cross-platform installation scripts.
 
+[0.2.1]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.1
 [0.2.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.0
 [0.1.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.1.0
