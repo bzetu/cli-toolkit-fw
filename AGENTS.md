@@ -11,10 +11,11 @@ When a user asks for a custom tool:
 3. Put every user-defined tool and all of its business logic under `extensions/<tool-id>/`. Do not place business logic in `src/`.
 4. Create commands with `defineCommand` and the module with `defineTool`.
 5. Default-export the finished `defineTool(...)` result from `extensions/<tool-id>/index.ts`. Discovery is automatic; do not create a manual registry.
-6. Add or update tests under `test/`.
+6. Put extension-specific tests under `extensions/<tool-id>/test/`. Use the root `test/` directory only for framework-level tests.
 7. Run `bun run typecheck` and `bun test` before reporting completion.
 8. Update the tool's own README when its configuration or commands change.
 9. Every code, configuration, installer, interaction, or directory-layout change must update the relevant repository documentation in the same change. Work is not complete until documentation matches behavior.
+10. For a release, update the version in `package.json`, add a dated entry to `CHANGELOG.md`, run all validation, and create an annotated `v<version>` Git tag only when the user requests a release or push with version management.
 
 ## Framework invariants
 
@@ -28,6 +29,7 @@ When a user asks for a custom tool:
 - Preserve keyboard and mouse behavior in `src/ui/app.tsx` unless the user explicitly requests a UI change.
 - Keep tools independent. A tool must not import another tool's internal files.
 - `extensions/` is the only location for user-defined tools. Never place custom functionality under `src/`.
+- Everything under `extensions/` except `.gitkeep` is intentionally ignored by Git. Do not force-add extension files unless the user explicitly changes this repository policy.
 - The framework must still start with an empty tool list when `extensions/` is missing or empty.
 - Do not add compatibility code for unrelated projects or previous product names.
 
@@ -45,10 +47,12 @@ When a user asks for a custom tool:
 
 - Default branding: `src/app-config.ts`; the installer-selected name overrides it through `CLI_TOOLKIT_FW_NAME`.
 - Tool implementations and automatic discovery input: `extensions/<tool-id>/`
+- Extension policy: `docs/EXTENSIONS.md`
 - Framework types: `src/core/types.ts`
 - Shared table output: `src/core/table.ts`
 - UI shell: `src/ui/app.tsx`
 - Logging: `src/platform/logger.ts`
 - Installer command/environment names: installation and launcher scripts in the repository root
+- Release history: `CHANGELOG.md` and the `version` field in `package.json`
 
 Use `examples/basic-tool/` as the canonical implementation example. It is documentation-only. To enable a derived tool, copy or create it under `extensions/`; never import it into framework source manually.

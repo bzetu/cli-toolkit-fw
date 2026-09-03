@@ -13,6 +13,8 @@ extensions/            all user-specific tools and business logic
 
 The extensions directory is optional. Missing or empty means an empty tool list and is the normal default framework state.
 
+Git tracks only `extensions/.gitkeep`. All actual extension directories are ignored so a customized local toolkit does not publish private tools or configuration with the reusable framework.
+
 Each route has an independent transcript. Home and tool routes share global commands but do not expose one another's scoped commands.
 
 Tools may depend on the public helpers in `src/core/`, Node/Bun APIs, and their own internal modules. Core and UI must not depend on a specific tool.

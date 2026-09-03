@@ -1,6 +1,6 @@
 # Testing
 
-All tests belong under `test/`. Do not place temporary test scripts in the repository root.
+Framework tests belong under the root `test/` directory. Tests for a user extension belong under `extensions/<tool-id>/test/`, alongside that ignored local extension. Do not place temporary test scripts in the repository root.
 
 Required checks:
 

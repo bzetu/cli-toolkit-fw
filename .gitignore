@@ -6,3 +6,7 @@ dist/
 !.env.example
 *.log
 .cli-toolkit-fw/
+
+# Keep the extension mount point, but never publish user-created tools.
+extensions/*
+!extensions/.gitkeep

@@ -62,7 +62,9 @@ Deleting `extensions/git-manager/` removes that tool on the next launch. Deletin
 
 ## 5. Add tests and documentation
 
-Test business logic separately from UI rendering. Add a `README.md` inside the tool directory documenting commands, configuration, required executables, network access, and destructive behavior.
+Test business logic separately from UI rendering. Put extension-specific tests in `extensions/<tool-id>/test/`. Add a `README.md` inside the tool directory documenting commands, configuration, required executables, network access, and destructive behavior.
+
+The entire extension directory is local-only and ignored by Git. Do not use `git add -f` to publish it. Reusable framework tests belong in the root `test/` directory.
 
 Finally run:
 

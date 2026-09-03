@@ -24,8 +24,10 @@ Linux/macOS installation:
 - replaces the previous marked block when reinstalled;
 - waits for any key before closing after a successful interactive installation.
 
-Uninstallers only remove the PATH/environment registration created by the framework. They do not delete launchers, Bun, `node_modules`, source code, configuration, or logs.
+Uninstallers remove the PATH/environment registration created by the framework, the generated `.cli-toolkit-fw/` launcher directory, and the generated `node_modules/` dependency directory inside the project. Before recursive removal, the Windows script verifies that each resolved directory is the expected direct child of the current project; the POSIX script accepts only the exact expected paths.
+
+Uninstallers do not delete Bun, source code, extensions, extension configuration, or logs. Dependencies can be restored later by running the installer or `bun install --frozen-lockfile`. After a successful interactive uninstall, both scripts wait for a key press before closing.
 
 If the project directory moves, run the installer again from the new directory.
 
-To change the command/UI name, run the installer again and enter a new name. The old launcher file is retained, but its directory is removed from PATH and is therefore no longer registered as a command.
+To change the command/UI name, run the installer again and enter a new name. The previous name-specific directory is removed from PATH. Generated launcher files remain until the uninstall script removes the complete `.cli-toolkit-fw/` directory.
