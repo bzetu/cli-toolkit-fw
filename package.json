@@ -1,0 +1,21 @@
+{
+  "name": "cli-toolkit-fw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-customizable interactive CLI toolkit framework",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@opentui/core": "0.4.5",
+    "@opentui/solid": "0.4.5",
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.13",
+    "typescript": "5.8.2"
+  }
+}

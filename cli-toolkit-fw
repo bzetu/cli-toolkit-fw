@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+set -eu
+
+INVOKED_NAME=$(basename "$0")
+SOURCE=$0
+while [ -h "$SOURCE" ]; do
+  SOURCE_DIR=$(CDPATH= cd -P -- "$(dirname -- "$SOURCE")" && pwd)
+  LINK=$(readlink "$SOURCE")
+  case "$LINK" in
+    /*) SOURCE=$LINK ;;
+    *) SOURCE="$SOURCE_DIR/$LINK" ;;
+  esac
+done
+
+CLI_TOOLKIT_FW_DIR=$(CDPATH= cd -P -- "$(dirname -- "$SOURCE")" && pwd)
+if [ -z "${CLI_TOOLKIT_FW_NAME:-}" ]; then
+  if [ "$INVOKED_NAME" = "cli-toolkit-fw" ]; then
+    CLI_TOOLKIT_FW_NAME=toolkit
+  else
+    CLI_TOOLKIT_FW_NAME=$INVOKED_NAME
+  fi
+  export CLI_TOOLKIT_FW_NAME
+fi
+cd "$CLI_TOOLKIT_FW_DIR"
+exec bun run "src/index.tsx" "$@"
