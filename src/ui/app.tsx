@@ -7,6 +7,7 @@ import type { Command, CommandResult, OutputTone, Route, SelectionRequest, ToolM
 import { CommandRegistry, ToolRegistry } from "../core/registry"
 import { createCoreCommands } from "../core/commands"
 import { logError } from "../platform/logger"
+import { handleCtrlC } from "./keyboard"
 
 const colors = {
   background: "#0b0c0f",
@@ -192,11 +193,8 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
   })
 
   useKeyboard((key: KeyEvent) => {
-    if (key.ctrl && key.name === "c") {
-      key.preventDefault()
-      renderer.destroy()
-      return
-    }
+    const selectedText = renderer.getSelection()?.getSelectedText() ?? ""
+    if (handleCtrlC(key, selectedText, (text) => renderer.copyToClipboardOSC52(text))) return
     const current = selection()
     if ((key.name === "up" || key.name === "down") && current?.options.length) {
       key.preventDefault()

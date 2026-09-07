@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file. Versions follow Semantic Versioning.
 
+## [0.2.2] - 2026-09-07
+
+### Fixed
+
+- `Ctrl+C` no longer exits the application. It copies selected text when a selection exists and is otherwise ignored; `/exit` remains the only interactive exit command.
+- Added regression coverage for copying selected text and consuming `Ctrl+C` without a selection.
+
 ## [0.2.1] - 2026-09-03
 
 ### Added
@@ -44,6 +51,7 @@ All notable changes to this project are documented in this file. Versions follow
 - Initial OpenCode-style interactive CLI framework.
 - Tool and command contracts, scoped navigation, command completion, selections, tables, logging, tests, and cross-platform installation scripts.
 
+[0.2.2]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.2
 [0.2.1]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.1
 [0.2.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.0
 [0.1.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.1.0

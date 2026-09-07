@@ -17,6 +17,8 @@ Git tracks only `extensions/.gitkeep`. All actual extension directories are igno
 
 Each route has an independent transcript. Home and tool routes share global commands but do not expose one another's scoped commands.
 
+The UI reserves `Ctrl+C` for copying selected text and never treats it as an exit shortcut. With no active text selection the key combination is consumed without closing the application; navigation and application exit remain owned by the global `/exit` command.
+
 Tools may depend on the public helpers in `src/core/`, Node/Bun APIs, and their own internal modules. Core and UI must not depend on a specific tool.
 
 ## Execution flow
