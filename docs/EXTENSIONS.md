@@ -19,3 +19,7 @@ The contents of `extensions/` are intentionally ignored by Git. Only `extensions
 Tests that belong only to a local extension should stay inside that extension's `test/` directory. Framework-level tests remain in the root `test/` directory.
 
 If an extension directory is deleted, that tool disappears on the next application launch. If the entire `extensions/` directory is deleted, the application starts normally in its default empty state.
+
+## MCP server registration
+
+Every command in every discovered extension is automatically exposed as an MCP tool named `<tool-id>.<command-name>` when the framework runs in `server start` mode. There is no separate registration step: `defineTool` is the single source of truth for both the interactive UI and the MCP tool list. Commands whose behavior only makes sense inside the interactive UI (list selections, navigation) still work headlessly — their results are rendered as readable text — but for AI-driven use prefer commands that return complete output in `result.output`.

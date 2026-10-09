@@ -62,6 +62,14 @@ return { exit: true }
 
 Throw an `Error` when execution fails. The framework will show a user-facing error and write the stack to the application log.
 
+## MCP exposure
+
+When the framework runs as an MCP server (`jctools server start`), every command of every discovered extension is automatically registered as a tool named `<tool-id>.<command-name>`. For example `autosign` inside the `codex-provider` tool becomes the MCP tool `codex-provider.autosign` with an `args: string[]` input schema — an AI client calls it with `arguments: { "args": ["suoxie"] }`. The command's `run(context, args)` receives those args exactly as from the terminal, and the result text is returned as the tool output. No additional registration code is needed.
+
+The single-shot `--run` form invokes the same command through the shared runner: `jctools --run codex-provider autosign suoxie`.
+
+Because every command is exposed to AI clients, keep commands idempotent and side-effect free where possible (for example, a check-in tool should skip accounts that already checked in today), and return complete output in `result.output` rather than relying on UI-only interactions.
+
 ## Argument completion
 
 A command may declare an optional `completeArgs` method so the user can Tab-complete arguments after the command name:

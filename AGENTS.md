@@ -32,6 +32,9 @@ When a user asks for a custom tool:
 - Everything under `extensions/` except `.gitkeep` is intentionally ignored by Git. Do not force-add extension files unless the user explicitly changes this repository policy.
 - The framework must still start with an empty tool list when `extensions/` is missing or empty.
 - Do not add compatibility code for unrelated projects or previous product names.
+- The entry supports three headless forms that must keep working: `server start` (MCP stdio server), `server stop` (stops the pid-file debug instance), and `--run <tool-id> <command-name> [args...]` (single-shot execution). Any other invocation opens the interactive UI.
+- Every extension command is automatically exposed as an MCP tool named `<tool-id>.<command-name>` when running as `server start`. Design commands for AI callers: prefer idempotent, side-effect-free behavior, return complete output via `result.output`, and throw `Error` with a clear message on failure.
+- MCP protocol code lives in `src/server/` and must stay dependency-free (hand-written stdio JSON-RPC); the shared headless execution core is `src/core/runner.ts` — do not duplicate command execution logic in the UI, the server, or extensions.
 
 ## Security rules
 
@@ -50,6 +53,8 @@ When a user asks for a custom tool:
 - Extension policy: `docs/EXTENSIONS.md`
 - Framework types: `src/core/types.ts`
 - Shared table output: `src/core/table.ts`
+- Shared headless command execution: `src/core/runner.ts`
+- MCP stdio server and pid-based process management: `src/server/`
 - UI shell: `src/ui/app.tsx`
 - Logging: `src/platform/logger.ts`
 - Installer command/environment names: installation and launcher scripts in the repository root

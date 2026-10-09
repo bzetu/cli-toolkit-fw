@@ -66,6 +66,20 @@ Test business logic separately from UI rendering. Put extension-specific tests i
 
 The entire extension directory is local-only and ignored by Git. Do not use `git add -f` to publish it. Reusable framework tests belong in the root `test/` directory.
 
+## 6. MCP behavior
+
+Your commands are exposed automatically as MCP tools named `<tool-id>.<command-name>` when the framework runs in `server start` mode; there is nothing extra to register. Because AI clients may call any command with `arguments: { "args": [...] }`, follow these rules:
+
+- Keep destructive or state-changing commands idempotent where possible, and make repeated calls safe (for example, skip work that is already done).
+- Return the full result in `result.output`. UI-only interactions (selections, navigation) still work — the framework renders them as readable text — but they are less useful to an AI caller than a complete textual answer.
+- Validate `args` explicitly and return a clear error message; a thrown `Error` is surfaced to the AI client as a failed tool call.
+
+You can test your command headlessly at any time with:
+
+```text
+jctools --run <tool-id> <command-name> [args...]
+```
+
 Finally run:
 
 ```text

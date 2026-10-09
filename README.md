@@ -1,6 +1,6 @@
 # cli-toolkit-fw
 
-Current version: `0.2.1`
+Current version: `1.0.0`
 
 `cli-toolkit-fw` 是一个可由 AI 协助定制的交互式 CLI 工具集合框架。它保留 OpenCode 风格的输入、命令补全、列表选择、导航、历史输出和鼠标滚动，但运行时不连接 LLM。
 
@@ -60,24 +60,82 @@ chmod +x ./uninstall.sh
 ./uninstall.sh
 ```
 
-## 让 AI 添加工具
+## MCP 服务器（AI 工具调用）
 
-可以直接描述需求：
+框架内置 MCP（Model Context Protocol）服务器，把 `extensions/` 中自动发现的工具注册为 MCP tools，供 AI 客户端（豆包工作任务与定时任务、Claude Code、Cursor 等支持 MCP 的客户端）以标准方式发现和调用。工具调用返回现有 CLI 终端输出格式，不做平台转换。
+
+### 入口模式
+
+框架支持三种非交互入口，其余任何调用都进入交互式终端 UI：
 
 ```text
-请阅读 AGENTS.md，在 extensions 文件夹中为这个 CLI 添加一个 Git 工具。
-需要 /status、/branches 和 /checkout 命令。
-选择分支时使用方向键列表，完成后运行类型检查和测试。
+toolkit server start                        # MCP stdio 服务器模式（供 AI 客户端 spawn）
+toolkit server stop                         # 停止本机手动启动的调试实例
+toolkit --run <工具ID> <命令名> [参数...]   # 单次执行一条命令，打印文本结果后退出
 ```
+
+- `server start` 是 MCP 服务器模式：被 AI 客户端作为启动命令 spawn 时，进程进入服务模式，通过 stdin/stdout 走 JSON-RPC（`initialize` → `tools/list` → `tools/call`），处理完一次请求继续等待下一条，直到客户端关闭 stdin（EOF）才退出。进程生命周期由客户端管理，正常流程无需手动停止；`server stop` 仅用于清理本机手动启动或异常残留的调试实例。
+- `--run` 是单次执行模式：把一条命令当作普通 CLI 运行，执行完打印文本并退出，适合脚本调用与人工验证。例如 `toolkit --run my-tool status`。列表选择、导航等交互式结果会自动渲染为可读文本，不会打开终端 UI。
+
+两种模式共用同一套命令执行核心（`src/core/runner.ts`），行为完全一致：MCP 客户端调用 `codex-provider.autosign` 与执行 `toolkit --run codex-provider autosign suoxie` 是同一路径。
+
+### 豆包工作任务接入
+
+在豆包工作任务「技能」→「连接器」中新建自定义连接器：
+
+| 字段 | 填写 |
+|---|---|
+| 服务器名称 | `toolkit` |
+| 传输类型 | `STDIO` |
+| 命令 | `bun.exe` 的绝对路径（本机实测：`C:\Users\jiangcheng_m.CYOU-INC\AppData\Roaming\npm\node_modules\bun\bin\bun.exe`；注意 PATH 中的 `bun` 常为 npm 的 `.cmd`/`.ps1` 包装，客户端无法直接 spawn，必须填原生可执行文件） |
+| 参数 | `run`、`<项目根目录>\src\index.tsx`、`server`、`start` |
+| 环境变量 | 不填 |
+
+保存后，豆包工作任务会在本地电脑 spawn 该进程并完成 MCP 握手，连接器暴露的工具即可在对话或定时任务中直接调用。
+
+工具命名约定：每个扩展命令自动注册为 MCP 工具 `<工具ID>.<命令名>`（例如 `codex-provider.autosign`）。工具输入是一个 `args: string[]` 参数——AI 调用时传 `arguments: { "args": ["suoxie"] }`，等价于终端里执行 `/autosign suoxie` 或 `toolkit --run codex-provider autosign suoxie`。
+
+注意：自定义连接器仅支持在本地电脑使用；调用依赖本机文件（token、脚本、配置）的任务，需在豆包工作任务中选择「本地电脑」设备。
+
+### 格式转换约定
+
+MCP 工具统一返回 CLI 终端输出。需要飞书等平台格式时，由调用方（AI）执行预先写好的转换脚本完成，不在工具内部做平台转换。
+
+## 让 AI 快速定制工具
+
+这个仓库专门面向「用 AI 定制工具」：安装后向任何能读写本仓库的代码型 AI 描述需求，AI 会按仓库内置契约（`AGENTS.md` + `docs/`）生成本地扩展。全部逻辑落在 `extensions/` 下，框架自动发现，无需改框架源码、无需注册表。
+
+### 工作流
+
+1. **描述需求**：告诉 AI 工具用途、命令名、行为，尽量带具体例子（如"签到后显示每个账号的金额和连续天数"）。
+2. **AI 实现**：AI 会读 `AGENTS.md` 与 `docs/CREATE_TOOL.md`，在 `extensions/<工具ID>/` 下用 `defineCommand` / `defineTool` 写代码，补测试和工具自身的 README。
+3. **验收**：AI 运行 `bun run typecheck` 和 `bun test`，全部通过才算完成。
+4. **使用**：重启框架进入 `/tools` 查看新工具；命令同时自动暴露为 MCP 工具 `<工具ID>.<命令名>`，也可用 `toolkit --run <工具ID> <命令名> [参数...]` 单次执行验证。
+
+### 示例指令
+
+```text
+请阅读 AGENTS.md 和 docs/CREATE_TOOL.md，在 extensions 文件夹中为这个 CLI 添加一个 Git 工具。
+需要 /status、/branches 和 /checkout 命令。
+选择分支时使用方向键列表，完成后运行 bun run typecheck 和 bun test。
+```
+
+### 定制规范速览
+
+- 工具与全部业务逻辑放 `extensions/<工具ID>/`，禁止放 `src/`；`index.ts` 默认导出 `defineTool(...)` 结果，框架自动发现。
+- 命令用 `defineCommand` 定义，返回 `CommandResult`（`output` / `selection` / `navigate` / `clear` / `exit`）。
+- 每条命令自动成为 MCP 工具 `<工具ID>.<命令名>`：面向 AI 调用时保持幂等、把完整结果放 `result.output`。
+- 扩展测试放 `extensions/<工具ID>/test/`；配置或命令变化必须同步更新工具自身 README。
+- `extensions/` 内容默认被 Git 忽略，个人工具与密钥不会推送到远程。
 
 详细规则见：
 
-- `docs/CREATE_TOOL.md`
-- `docs/EXTENSIONS.md`
-- `docs/COMMAND_API.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SECURITY.md`
-- `docs/TESTING.md`
+- `docs/CREATE_TOOL.md` —— 从零创建工具的完整步骤与 MCP 行为
+- `docs/EXTENSIONS.md` —— 扩展目录规范与 MCP 自动注册
+- `docs/COMMAND_API.md` —— 命令契约、结果类型、参数补全、外部进程
+- `docs/ARCHITECTURE.md` —— 分层结构与 headless 执行（MCP server / `--run`）
+- `docs/SECURITY.md` —— 凭据与敏感操作规则
+- `docs/TESTING.md` —— 测试规范
 
 ## 默认交互
 

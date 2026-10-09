@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file. Versions follow Semantic Versioning.
 
+## [1.0.0] - 2026-10-09
+
+### Added
+
+- Built-in MCP (Model Context Protocol) stdio server: `jctools server start` runs the framework as an MCP server, and every command of every discovered extension is registered automatically as an MCP tool named `<tool-id>.<command-name>` with an `args: string[]` input schema. Tool calls reuse the same command execution core and return the existing CLI terminal output; no platform conversion happens inside the framework.
+- `jctools server stop` stops the manually started debug instance recorded in the pid file. Processes spawned by an MCP client are managed by the client and exit when the client closes stdin (EOF); they are not recorded and never need manual stopping.
+- Non-interactive single-shot execution: `jctools --run <tool-id> <command-name> [args...]` runs one command, prints its plain-text output, and exits. UI-only result kinds (selection, navigation, clear, exit) are rendered as readable text instead of opening the terminal UI.
+- A shared non-interactive execution core in `src/core/runner.ts` (`findCommand`, `resultToText`, `runToolCommand`) used by both the MCP server and `--run`.
+
+### Changed
+
+- Application entry `src/index.tsx` now dispatches on argv: `server start` / `server stop` / `--run` run headless; any other invocation opens the interactive terminal UI exactly as before.
+- README and `docs/` now document MCP configuration for Doubao Tasks ("toolkit" connector: STDIO, command `bun.exe` — the absolute path of the native executable, since PATH `bun` is often an npm `.cmd`/`.ps1` wrapper — arguments `run <project-root>\src\index.tsx server start`), the auto-registration contract, and the format-conversion convention (platform formatting is done by the caller with a pre-written script, not inside the framework).
+- `docs/ARCHITECTURE.md` adds the server layer; `docs/COMMAND_API.md` and `docs/EXTENSIONS.md` describe MCP exposure of tool commands.
+
 ## [0.2.3] - 2026-10-09
 
 ### Added
