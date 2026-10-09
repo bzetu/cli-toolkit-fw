@@ -7,7 +7,7 @@ import type { Command, CommandResult, OutputTone, Route, SelectionRequest, ToolM
 import { CommandRegistry, ToolRegistry } from "../core/registry"
 import { createCoreCommands } from "../core/commands"
 import { logError } from "../platform/logger"
-import { handleCtrlC } from "./keyboard"
+import { handleCtrlA, handleCtrlC } from "./keyboard"
 
 const colors = {
   background: "#0b0c0f",
@@ -78,14 +78,60 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     return active.kind === "tool" ? tools.get(active.toolID) : undefined
   }
   const commands = () => registry.list(scope())
-  const commandMatches = createMemo(() => {
+  type CompletionEntry = {
+    insert: string
+    label: string
+    description: string
+    mode: "command" | "argument"
+  }
+
+  const completions = createMemo((): CompletionEntry[] => {
     if (selection()) return []
-    const value = inputValue().trim().toLowerCase()
+    const value = inputValue()
     if (!value.startsWith("/")) return []
-    const query = value.slice(1)
-    return commands().filter((command) =>
-      [command.name, ...(command.aliases ?? [])].some((name) => name.toLowerCase().startsWith(query)),
-    )
+    const rest = value.slice(1)
+
+    if (!rest.includes(" ")) {
+      const query = rest.trim().toLowerCase()
+      return commands()
+        .filter((command) =>
+          [command.name, ...(command.aliases ?? [])].some((name) => name.toLowerCase().startsWith(query)),
+        )
+        .map((command) => ({
+          insert: `/${command.name} `,
+          label: `/${command.name}`,
+          description: command.description,
+          mode: "command" as const,
+        }))
+    }
+
+    const firstSpace = rest.indexOf(" ")
+    const cmdNameRaw = rest.slice(0, firstSpace)
+    const command = registry.find(scope(), cmdNameRaw.toLowerCase())
+    if (!command?.completeArgs) return []
+
+    const afterCommand = rest.slice(firstSpace + 1)
+    const endsWithSpace = afterCommand.endsWith(" ")
+    const trimmedAfter = afterCommand.trim()
+    const tokens = trimmedAfter ? trimmedAfter.split(/\s+/) : []
+
+    let args: string[]
+    let partial: string
+    if (endsWithSpace || tokens.length === 0) {
+      args = tokens
+      partial = ""
+    } else {
+      partial = tokens[tokens.length - 1]!
+      args = tokens.slice(0, -1)
+    }
+
+    const prefix = `/${cmdNameRaw}` + (args.length > 0 ? " " + args.join(" ") : "")
+    return (command.completeArgs(args, partial) ?? []).map((item) => ({
+      insert: `${prefix} ${item.text} `,
+      label: item.text,
+      description: item.description ?? "",
+      mode: "argument" as const,
+    }))
   })
 
   const append = (kind: TranscriptEntry["kind"], text: string, tone?: OutputTone) => {
@@ -185,16 +231,17 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     setTimeout(() => selectionList?.scrollChildIntoView(`selection-option-${index}`), 0)
   })
 
-  createEffect(() => {
-    const matches = commandMatches()
+ createEffect(() => {
+    const items = completions()
     const index = commandSelected()
-    if (!matches.length) return
+    if (!items.length) return
     setTimeout(() => commandList?.scrollChildIntoView(`command-option-${index}`), 0)
-  })
+ })
 
-  useKeyboard((key: KeyEvent) => {
-    const selectedText = renderer.getSelection()?.getSelectedText() ?? ""
+ useKeyboard((key: KeyEvent) => {
+    const selectedText = input.getSelectedText() || renderer.getSelection()?.getSelectedText() || ""
     if (handleCtrlC(key, selectedText, (text) => renderer.copyToClipboardOSC52(text))) return
+    if (handleCtrlA(key, () => input.selectAll())) return
     const current = selection()
     if ((key.name === "up" || key.name === "down") && current?.options.length) {
       key.preventDefault()
@@ -202,21 +249,22 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
       moveSelection(delta)
       return
     }
-    const matches = commandMatches()
-    if ((key.name === "up" || key.name === "down") && matches.length) {
+    const items = completions()
+    if ((key.name === "up" || key.name === "down") && items.length) {
       key.preventDefault()
       const delta = key.name === "up" ? -1 : 1
-      setCommandSelected((index) => (index + delta + matches.length) % matches.length)
+      setCommandSelected((index) => (index + delta + items.length) % items.length)
       return
     }
-    if (key.name === "tab" && matches.length) {
+    if (key.name === "tab" && items.length) {
       key.preventDefault()
-      const command = matches[commandSelected()] ?? matches[0]
-      if (command) {
-        const value = `/${command.name}`
+      const entry = items[commandSelected()] ?? items[0]
+      if (entry) {
+        const value = entry.insert
         setInputValue(value)
         input.value = value
         input.cursorOffset = value.length
+        setCommandSelected(0)
       }
       return
     }
@@ -346,10 +394,10 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
         )}
       </Show>
 
-      <Show when={commandMatches().length > 0}>
+      <Show when={completions().length > 0}>
         <scrollbox
           ref={(value: ScrollBoxRenderable) => (commandList = value)}
-          height={Math.min(commandMatches().length, 6)}
+          height={Math.min(completions().length, 6)}
           flexShrink={0}
           marginLeft={3}
           marginRight={3}
@@ -359,8 +407,8 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
           scrollbarOptions={{ visible: false }}
           scrollAcceleration={new FixedSpeedScroll()}
         >
-          <For each={commandMatches()}>
-            {(command, index) => {
+          <For each={completions()}>
+            {(entry, index) => {
               const active = () => index() === commandSelected()
               return (
                 <box
@@ -370,12 +418,22 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
                   flexDirection="row"
                   backgroundColor={active() ? colors.selected : colors.elevated}
                   onMouseOver={() => setCommandSelected(index())}
-                  onMouseUp={() => void execute(`/${command.name}`)}
+                  onMouseUp={() => {
+                    if (entry.mode === "command") {
+                      void execute(entry.insert)
+                    } else {
+                      setInputValue(entry.insert)
+                      input.value = entry.insert
+                      input.cursorOffset = entry.insert.length
+                      setCommandSelected(0)
+                      if (!renderer.isDestroyed) input.focus()
+                    }
+                  }}
                 >
                   <text width={16} fg={active() ? colors.primary : colors.text}>
-                    {active() ? "●" : " "} /{command.name}
+                    {active() ? "● " : "  "}{entry.label}
                   </text>
-                  <text fg={active() ? colors.text : colors.muted}>{command.description}</text>
+                  <text fg={active() ? colors.text : colors.muted}>{entry.description}</text>
                 </box>
               )
             }}
@@ -409,12 +467,16 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
               setInputValue(value)
               setCommandSelected(0)
             }}
-            onSubmit={(submitted: unknown) => {
-              const value = typeof submitted === "string" ? submitted : input.value
-              const matches = commandMatches()
-              const chosen = matches[commandSelected()]
-              void execute(chosen ? `/${chosen.name}` : value)
-            }}
+           onSubmit={(submitted: unknown) => {
+             const value = typeof submitted === "string" ? submitted : input.value
+              const items = completions()
+              const chosen = items[commandSelected()] ?? items[0]
+              if (chosen && chosen.mode === "command") {
+                void execute(chosen.insert)
+              } else {
+                void execute(value)
+              }
+           }}
           />
         </box>
       </box>

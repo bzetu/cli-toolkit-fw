@@ -62,6 +62,38 @@ return { exit: true }
 
 Throw an `Error` when execution fails. The framework will show a user-facing error and write the stack to the application log.
 
+## Argument completion
+
+A command may declare an optional `completeArgs` method so the user can Tab-complete arguments after the command name:
+
+```ts
+import { defineCommand } from "../../../src/core/define"
+import type { CompletionItem } from "../../../src/core/types"
+
+const providers = ["suoxie", "viapi", "namax"]
+
+export const demoCommand = defineCommand({
+  id: "demo.complete",
+  name: "demo",
+  title: "补全示例",
+  description: "演示参数 Tab 补全",
+  completeArgs(args, partial): CompletionItem[] {
+    if (args.length === 0) {
+      return providers
+        .filter((p) => p.startsWith(partial))
+        .map((p) => ({ text: p, description: "Provider" }))
+    }
+    // No completion for the second argument
+    return []
+  },
+  async run(_context, args) {
+    return { output: `选择了 ${args[0] ?? "（无）"}` }
+  },
+})
+```
+
+`completeArgs` receives the already-completed `args` and the `partial` token the user is currently typing. It must be **synchronous** — preload any async data (e.g. local config files) in `onEnter` and cache it module-level so `completeArgs` can read it instantly.
+
 ## External processes
 
 Use `Bun.spawn` with an argument array:

@@ -36,6 +36,11 @@ export type CommandContext = {
   toolID?: string
 }
 
+export type CompletionItem = {
+  text: string
+  description?: string
+}
+
 export type Command = {
   id: string
   name: string
@@ -44,6 +49,7 @@ export type Command = {
   description: string
   scope: "global" | "home" | string
   run(context: CommandContext, args: string[]): Promise<CommandResult> | CommandResult
+  completeArgs?(args: string[], partial: string): CompletionItem[]
 }
 
 export type ToolCommand = Omit<Command, "scope">

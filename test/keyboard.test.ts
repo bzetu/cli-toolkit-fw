@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { handleCtrlC } from "../src/ui/keyboard"
+import { handleCtrlA, handleCtrlC } from "../src/ui/keyboard"
 
 function ctrlCKey() {
   let prevented = false
@@ -44,7 +44,53 @@ describe("Ctrl+C keyboard policy", () => {
       },
     }
 
-    expect(handleCtrlC(key, "selected output", () => {})).toBe(false)
+  expect(handleCtrlC(key, "selected output", () => {})).toBe(false)
+    expect(prevented).toBe(false)
+  })
+})
+
+describe("Ctrl+A keyboard policy", () => {
+  test("selects all text in the input", () => {
+    let prevented = false
+    let selected = false
+    const key = {
+      ctrl: true,
+      name: "a",
+      preventDefault() {
+        prevented = true
+      },
+    }
+
+    expect(handleCtrlA(key, () => { selected = true })).toBe(true)
+    expect(prevented).toBe(true)
+    expect(selected).toBe(true)
+  })
+
+  test("leaves other key combinations untouched", () => {
+    let prevented = false
+    const key = {
+      ctrl: false,
+      name: "a",
+      preventDefault() {
+        prevented = true
+      },
+    }
+
+    expect(handleCtrlA(key, () => {})).toBe(false)
+    expect(prevented).toBe(false)
+  })
+
+  test("does not intercept Ctrl+C", () => {
+    let prevented = false
+    const key = {
+      ctrl: true,
+      name: "c",
+      preventDefault() {
+        prevented = true
+      },
+    }
+
+    expect(handleCtrlA(key, () => {})).toBe(false)
     expect(prevented).toBe(false)
   })
 })

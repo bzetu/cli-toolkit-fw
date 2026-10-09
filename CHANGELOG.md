@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file. Versions follow Semantic Versioning.
 
+## [0.2.3] - 2026-10-09
+
+### Added
+
+- Argument tab completion: commands may declare an optional `completeArgs(args, partial)` method; typing a space after a command name now completes arguments when supported.
+- `Ctrl+A` selects all text in the input box for copying or replacement in one shortcut.
+
+### Changed
+
+- README, architecture and command API documentation now describe argument completion and the `Ctrl+A` shortcut.
+- New `CompletionItem` contract and `completeArgs` hook in `src/core/types.ts`.
+
 ## [0.2.2] - 2026-09-07
 
 ### Fixed
@@ -51,6 +63,7 @@ All notable changes to this project are documented in this file. Versions follow
 - Initial OpenCode-style interactive CLI framework.
 - Tool and command contracts, scoped navigation, command completion, selections, tables, logging, tests, and cross-platform installation scripts.
 
+[0.2.3]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.3
 [0.2.2]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.2
 [0.2.1]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.1
 [0.2.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.0

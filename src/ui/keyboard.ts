@@ -10,3 +10,10 @@ export function handleCtrlC(key: KeyboardEvent, selectedText: string, copy: (tex
   if (selectedText) copy(selectedText)
   return true
 }
+
+export function handleCtrlA(key: KeyboardEvent, selectAll: () => void) {
+  if (!key.ctrl || key.name !== "a") return false
+  key.preventDefault()
+  selectAll()
+  return true
+}

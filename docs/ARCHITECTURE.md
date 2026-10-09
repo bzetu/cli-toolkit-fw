@@ -17,7 +17,7 @@ Git tracks only `extensions/.gitkeep`. All actual extension directories are igno
 
 Each route has an independent transcript. Home and tool routes share global commands but do not expose one another's scoped commands.
 
-The UI reserves `Ctrl+C` for copying selected text and never treats it as an exit shortcut. With no active text selection the key combination is consumed without closing the application; navigation and application exit remain owned by the global `/exit` command.
+The UI reserves `Ctrl+C` for copying selected text and never treats it as an exit shortcut. With no active text selection the key combination is consumed without closing the application; navigation and application exit remain owned by the global `/exit` command. `Ctrl+A` selects all text in the input box so the user can copy or replace the entire value with a single shortcut.
 
 Tools may depend on the public helpers in `src/core/`, Node/Bun APIs, and their own internal modules. Core and UI must not depend on a specific tool.
 
@@ -32,6 +32,10 @@ user input
 ```
 
 The leading slash is UI syntax. A command declared as `name: "status"` is invoked as `/status`.
+
+## Argument completion
+
+A command may declare an optional `completeArgs(args, partial)` method that returns `CompletionItem[]`. When the user has typed a command name followed by a space, the framework calls this method to produce argument-aware Tab completions. The method receives the already-completed arguments and the partial token currently being typed. It must be synchronous; extensions that need cached data should preload it in `onEnter`.
 
 ## Extension boundary
 
