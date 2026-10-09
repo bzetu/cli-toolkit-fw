@@ -17,3 +17,9 @@ export function handleCtrlA(key: KeyboardEvent, selectAll: () => void) {
   selectAll()
   return true
 }
+
+export type CompletionEntryLike = { insert: string }
+
+export function completeFromList<T extends CompletionEntryLike>(items: T[], selected: number): T | undefined {
+  return items[selected] ?? items[0]
+}

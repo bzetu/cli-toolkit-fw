@@ -102,6 +102,8 @@ export const demoCommand = defineCommand({
 
 `completeArgs` receives the already-completed `args` and the `partial` token the user is currently typing. It must be **synchronous** — preload any async data (e.g. local config files) in `onEnter` and cache it module-level so `completeArgs` can read it instantly.
 
+When a completion menu is open, `Tab` and `Enter` both accept the highlighted item into the input box; the command runs only when no menu is open and the user presses `Enter` again. This prevents accidentally running a command without its arguments.
+
 ## External processes
 
 Use `Bun.spawn` with an argument array:

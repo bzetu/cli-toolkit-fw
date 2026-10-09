@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { handleCtrlA, handleCtrlC } from "../src/ui/keyboard"
+import { completeFromList, handleCtrlA, handleCtrlC } from "../src/ui/keyboard"
 
 function ctrlCKey() {
   let prevented = false
@@ -92,5 +92,29 @@ describe("Ctrl+A keyboard policy", () => {
 
     expect(handleCtrlA(key, () => {})).toBe(false)
     expect(prevented).toBe(false)
+  })
+})
+
+describe("completion selection", () => {
+  const items = [
+    { insert: "/autosign suoxie " },
+    { insert: "/autosign viapi " },
+    { insert: "/autosign namax " },
+  ]
+
+  test("returns the item at the selected index", () => {
+    expect(completeFromList(items, 1)).toEqual({ insert: "/autosign viapi " })
+  })
+
+  test("returns the first item when the selected index is out of range", () => {
+    expect(completeFromList(items, 99)).toEqual({ insert: "/autosign suoxie " })
+  })
+
+  test("returns undefined for an empty list", () => {
+    expect(completeFromList([], 0)).toBeUndefined()
+  })
+
+  test("falls back to the first item for a negative index", () => {
+    expect(completeFromList(items, -1)).toEqual({ insert: "/autosign suoxie " })
   })
 })

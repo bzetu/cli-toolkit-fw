@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file. Versions follow Semantic Versioning.
 
+## [1.0.1] - 2026-10-09
+
+### Added
+
+- `--help` (also `-h` / `help`) entry point prints usage for the interactive UI, `server start`, `server stop`, `--run`, and `--help` itself.
+- New `completeFromList` helper centralizes completion selection so `Tab` and `Enter` pick the same highlighted item.
+
+### Changed
+
+- In the interactive UI, `Enter` with an active completion menu (for example after typing `/autosign ` and seeing argument candidates) now completes the selected item instead of running the command without arguments; `Enter` runs the command only when no completion menu is open. `Tab` behaves the same as before.
+- README terminology updated ("AI 工作任务接入" instead of "豆包工作任务接入"); README documents the `--help` entry point and the new `Enter` completion behavior.
+
 ## [1.0.0] - 2026-10-09
 
 ### Added
@@ -78,6 +90,8 @@ All notable changes to this project are documented in this file. Versions follow
 - Initial OpenCode-style interactive CLI framework.
 - Tool and command contracts, scoped navigation, command completion, selections, tables, logging, tests, and cross-platform installation scripts.
 
+[1.0.1]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v1.0.1
+[1.0.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v1.0.0
 [0.2.3]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.3
 [0.2.2]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.2
 [0.2.1]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.1

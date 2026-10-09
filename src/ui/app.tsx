@@ -7,7 +7,7 @@ import type { Command, CommandResult, OutputTone, Route, SelectionRequest, ToolM
 import { CommandRegistry, ToolRegistry } from "../core/registry"
 import { createCoreCommands } from "../core/commands"
 import { logError } from "../platform/logger"
-import { handleCtrlA, handleCtrlC } from "./keyboard"
+import { completeFromList, handleCtrlA, handleCtrlC } from "./keyboard"
 
 const colors = {
   background: "#0b0c0f",
@@ -224,6 +224,16 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     setSelected((index) => (index + delta + current.options.length) % current.options.length)
   }
 
+  const acceptCompletion = () => {
+    const entry = completeFromList(completions(), commandSelected())
+    if (!entry) return
+    const value = entry.insert
+    setInputValue(value)
+    input.value = value
+    input.cursorOffset = value.length
+    setCommandSelected(0)
+  }
+
   createEffect(() => {
     const current = selection()
     const index = selected()
@@ -258,19 +268,17 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     }
     if (key.name === "tab" && items.length) {
       key.preventDefault()
-      const entry = items[commandSelected()] ?? items[0]
-      if (entry) {
-        const value = entry.insert
-        setInputValue(value)
-        input.value = value
-        input.cursorOffset = value.length
-        setCommandSelected(0)
-      }
+      acceptCompletion()
       return
     }
     if (key.name === "return" && current && inputValue().trim() === "") {
       key.preventDefault()
       void chooseSelection()
+      return
+    }
+    if (key.name === "return" && items.length) {
+      key.preventDefault()
+      acceptCompletion()
       return
     }
     if (key.name === "escape") {
@@ -483,7 +491,7 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
       <box height={2} flexShrink={0} paddingLeft={4} paddingRight={3} paddingTop={1} flexDirection="row">
         <text fg={colors.subtle}>{currentTool() ? "tool" : "home"}</text>
         <text flexGrow={1} />
-        <text fg={colors.subtle}>/ commands   ↑↓ select   tab complete   enter run</text>
+        <text fg={colors.subtle}>/ commands   ↑↓ select   tab/enter complete   enter run</text>
       </box>
     </box>
   )

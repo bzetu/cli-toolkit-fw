@@ -10,7 +10,7 @@ src/core/              public command/tool contracts, registries, shared runner
 extensions/            all user-specific tools and business logic
 ```
 
-`src/index.tsx` dispatches on the first argument. `server start` enters MCP stdio server mode, `server stop` stops a manually started debug instance, `--run <tool-id> <command-name> [args...]` executes a single command headlessly and prints its text output, and any other invocation opens the interactive terminal UI.
+`src/index.tsx` dispatches on the first argument. `server start` enters MCP stdio server mode, `server stop` stops a manually started debug instance, `--run <tool-id> <command-name> [args...]` executes a single command headlessly and prints its text output, `--help` (or `-h` / `help`) prints usage text, and any other invocation opens the interactive terminal UI.
 
 In all modes `src/index.tsx` asks `src/core/extensions.ts` to scan direct child directories under `extensions/`. Each child may provide an `index.ts`, `index.tsx`, `index.js`, or `index.mjs` with a default-exported tool. The resulting tools are passed to the UI, to the MCP server, or to the runner.
 

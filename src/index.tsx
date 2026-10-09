@@ -8,6 +8,7 @@ import { installGlobalErrorLogging, logError, logFilePath } from "./platform/log
 import { runToolCommand } from "./core/runner"
 import { serveMcp } from "./server/mcp"
 import { recordPidIfInteractive, stopMcpServer } from "./server/process"
+import { usageText } from "./help"
 import { App } from "./ui/app"
 
 const projectRoot = resolve(import.meta.dir, "..")
@@ -16,7 +17,9 @@ installGlobalErrorLogging()
 const args = process.argv.slice(2)
 const mode = args[0]
 
-if (mode === "server") {
+if (mode === "--help" || mode === "-h" || mode === "help") {
+  console.log(usageText(appConfig.name))
+} else if (mode === "server") {
   const sub = args[1]
   if (sub === "start") {
     try {

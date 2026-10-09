@@ -62,7 +62,7 @@ chmod +x ./uninstall.sh
 
 ## MCP 服务器（AI 工具调用）
 
-框架内置 MCP（Model Context Protocol）服务器，把 `extensions/` 中自动发现的工具注册为 MCP tools，供 AI 客户端（豆包工作任务与定时任务、Claude Code、Cursor 等支持 MCP 的客户端）以标准方式发现和调用。工具调用返回现有 CLI 终端输出格式，不做平台转换。
+框架内置 MCP（Model Context Protocol）服务器，把 `extensions/` 中自动发现的工具注册为 MCP tools，供 AI 客户端（AI 工作任务与定时任务、Claude Code、Cursor 等支持 MCP 的客户端）以标准方式发现和调用。工具调用返回现有 CLI 终端输出格式，不做平台转换。
 
 ### 入口模式
 
@@ -72,6 +72,7 @@ chmod +x ./uninstall.sh
 toolkit server start                        # MCP stdio 服务器模式（供 AI 客户端 spawn）
 toolkit server stop                         # 停止本机手动启动的调试实例
 toolkit --run <工具ID> <命令名> [参数...]   # 单次执行一条命令，打印文本结果后退出
+toolkit --help                              # 查看使用帮助（支持 -h / help）
 ```
 
 - `server start` 是 MCP 服务器模式：被 AI 客户端作为启动命令 spawn 时，进程进入服务模式，通过 stdin/stdout 走 JSON-RPC（`initialize` → `tools/list` → `tools/call`），处理完一次请求继续等待下一条，直到客户端关闭 stdin（EOF）才退出。进程生命周期由客户端管理，正常流程无需手动停止；`server stop` 仅用于清理本机手动启动或异常残留的调试实例。
@@ -79,9 +80,9 @@ toolkit --run <工具ID> <命令名> [参数...]   # 单次执行一条命令，
 
 两种模式共用同一套命令执行核心（`src/core/runner.ts`），行为完全一致：MCP 客户端调用 `codex-provider.autosign` 与执行 `toolkit --run codex-provider autosign suoxie` 是同一路径。
 
-### 豆包工作任务接入
+### AI 工作任务接入
 
-在豆包工作任务「技能」→「连接器」中新建自定义连接器：
+在AI 工作任务「技能」→「连接器」中新建自定义连接器：
 
 | 字段 | 填写 |
 |---|---|
@@ -91,11 +92,11 @@ toolkit --run <工具ID> <命令名> [参数...]   # 单次执行一条命令，
 | 参数 | `run`、`<项目根目录>\src\index.tsx`、`server`、`start` |
 | 环境变量 | 不填 |
 
-保存后，豆包工作任务会在本地电脑 spawn 该进程并完成 MCP 握手，连接器暴露的工具即可在对话或定时任务中直接调用。
+保存后，AI 工作任务会在本地电脑 spawn 该进程并完成 MCP 握手，连接器暴露的工具即可在对话或定时任务中直接调用。
 
 工具命名约定：每个扩展命令自动注册为 MCP 工具 `<工具ID>.<命令名>`（例如 `codex-provider.autosign`）。工具输入是一个 `args: string[]` 参数——AI 调用时传 `arguments: { "args": ["suoxie"] }`，等价于终端里执行 `/autosign suoxie` 或 `toolkit --run codex-provider autosign suoxie`。
 
-注意：自定义连接器仅支持在本地电脑使用；调用依赖本机文件（token、脚本、配置）的任务，需在豆包工作任务中选择「本地电脑」设备。
+注意：自定义连接器仅支持在本地电脑使用；调用依赖本机文件（token、脚本、配置）的任务，需在AI 工作任务中选择「本地电脑」设备。
 
 ### 格式转换约定
 
@@ -147,8 +148,7 @@ MCP 工具统一返回 CLI 终端输出。需要飞书等平台格式时，由�
 `Ctrl+C` 不用于退出程序。界面中存在选中文本时，`Ctrl+C` 复制所选内容；没有选中文本时不会执行退出操作。请使用 `/exit` 返回主页或关闭程序。
 - `Ctrl+A`：全选输入框文本
 - `↑` / `↓`：选择命令或列表项
-- `Tab`：补全命令或参数
-- `Enter`：执行或确认
+- `Tab` / `Enter`：有补全菜单（如 `/autosign` 后跟空格出现的参数候选）时，补全当前选中的项，**不会执行命令**；无补全菜单时 `Enter` 才执行命令
 - `Esc`：关闭选择列表或清空输入
 - 鼠标滚轮：滚动历史输出
 
