@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { completeFromList, handleCtrlA, handleCtrlC } from "../src/ui/keyboard"
+import { completeFromList, handleCtrlA, handleCtrlC, isCommandComplete } from "../src/ui/keyboard"
 
 function ctrlCKey() {
   let prevented = false
@@ -116,5 +116,41 @@ describe("completion selection", () => {
 
   test("falls back to the first item for a negative index", () => {
     expect(completeFromList(items, -1)).toEqual({ insert: "/autosign suoxie " })
+  })
+})
+
+describe("argument completeness (补齐后是否可执行)", () => {
+  const single = [{ name: "target", required: false }]
+  const withOptionalTail = [
+    { name: "provider", required: true },
+    { name: "account", required: true },
+    { name: "amountUsd", required: false },
+  ]
+
+  test("returns true without args metadata (menu-disappearance rule decides)", () => {
+    expect(isCommandComplete("/tools", undefined)).toBe(true)
+  })
+
+  test("optional-only args complete when the only slot is filled", () => {
+    expect(isCommandComplete("/autosign suoxie", single)).toBe(true)
+  })
+
+  test("an empty optional slot keeps the command incomplete so the user can fill it", () => {
+    expect(isCommandComplete("/autosign", single)).toBe(false)
+  })
+
+  test("all declared slots (including optional) must be filled before auto-run", () => {
+    expect(isCommandComplete("/quota suoxie", withOptionalTail)).toBe(false)
+    expect(isCommandComplete("/quota suoxie charles", withOptionalTail)).toBe(false)
+    expect(isCommandComplete("/quota suoxie charles 25", withOptionalTail)).toBe(true)
+  })
+
+  test("trailing whitespace from completion does not affect the count", () => {
+    expect(isCommandComplete("/quota suoxie charles 25 ", withOptionalTail)).toBe(true)
+  })
+
+  test("ignores non-command input", () => {
+    expect(isCommandComplete("plain text", withOptionalTail)).toBe(false)
+    expect(isCommandComplete("", withOptionalTail)).toBe(false)
   })
 })

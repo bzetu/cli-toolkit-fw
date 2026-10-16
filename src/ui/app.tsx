@@ -7,7 +7,7 @@ import type { Command, CommandResult, OutputTone, Route, SelectionRequest, ToolM
 import { CommandRegistry, ToolRegistry } from "../core/registry"
 import { createCoreCommands } from "../core/commands"
 import { logError } from "../platform/logger"
-import { completeFromList, handleCtrlA, handleCtrlC } from "./keyboard"
+import { completeFromList, handleCtrlA, handleCtrlC, isCommandComplete } from "./keyboard"
 
 const colors = {
   background: "#0b0c0f",
@@ -63,7 +63,10 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
   const [selection, setSelection] = createSignal<SelectionRequest>()
   const [selected, setSelected] = createSignal(0)
   const [commandSelected, setCommandSelected] = createSignal(0)
+  const [inputHistory, setInputHistory] = createSignal<string[]>([])
+  const [historyIndex, setHistoryIndex] = createSignal(-1)
   let nextEntryID = 2
+  let suppressingHistoryInput = false
   let input!: InputRenderable
   let transcript!: ScrollBoxRenderable
   let selectionList: ScrollBoxRenderable | undefined
@@ -87,6 +90,7 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
 
   const completions = createMemo((): CompletionEntry[] => {
     if (selection()) return []
+    if (historyIndex() !== -1) return []
     const value = inputValue()
     if (!value.startsWith("/")) return []
     const rest = value.slice(1)
@@ -184,6 +188,11 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     setInputValue("")
     input.value = ""
     setSelection(undefined)
+    setHistoryIndex(-1)
+    const history = inputHistory()
+    if (history[history.length - 1] !== value) {
+      setInputHistory([...history.slice(-99), value])
+    }
     setBusy(true)
     try {
       if (!value.startsWith("/")) throw new Error("请输入 / 查看当前可用命令")
@@ -224,6 +233,17 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     setSelected((index) => (index + delta + current.options.length) % current.options.length)
   }
 
+  // 补齐后判断是否执行：有候选菜单时补齐选中项，若补齐后没有更多候选
+  // 且必填参数已满足（未声明 args 元数据则视为满足），立即执行。
+  const completeAndMaybeRun = (entry: CompletionEntry) => {
+    const value = entry.insert
+    setInputValue(value)
+    input.value = value
+    input.cursorOffset = value.length
+    setCommandSelected(0)
+    if (completions().length === 0 && inputComplete()) void execute(value)
+  }
+
   const acceptCompletion = () => {
     const entry = completeFromList(completions(), commandSelected())
     if (!entry) return
@@ -232,6 +252,30 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     input.value = value
     input.cursorOffset = value.length
     setCommandSelected(0)
+  }
+
+  // 判断必填参数是否已填完；未声明 args 元数据的命令视为已满足，
+  // 是否执行由「补齐后还有没有候选菜单」决定。
+  const inputComplete = (): boolean => {
+    const value = inputValue().trim()
+    if (!value.startsWith("/")) return false
+    const [name, ...args] = value.slice(1).split(/\s+/)
+    const command = registry.find(scope(), name ?? "")
+    return isCommandComplete(inputValue(), command?.args)
+  }
+
+  const applyHistory = (index: number) => {
+    const value = index === -1 ? "" : inputHistory()[index]!
+    // 屏蔽 onInput 的历史重置：程序回填输入不算用户编辑
+    suppressingHistoryInput = true
+    setHistoryIndex(index)
+    setInputValue(value)
+    input.value = value
+    input.cursorOffset = value.length
+    setCommandSelected(0)
+    setTimeout(() => {
+      suppressingHistoryInput = false
+    }, 0)
   }
 
   createEffect(() => {
@@ -253,13 +297,29 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     if (handleCtrlC(key, selectedText, (text) => renderer.copyToClipboardOSC52(text))) return
     if (handleCtrlA(key, () => input.selectAll())) return
     const current = selection()
+    const items = completions()
+    const history = inputHistory()
+    const browsingHistory = historyIndex() !== -1
+    // 正在浏览历史，或输入框无内容且无菜单时：↑↓ 优先翻历史
+    if (
+      (key.name === "up" || key.name === "down") &&
+      (browsingHistory || (!current?.options.length && !items.length && history.length))
+    ) {
+      key.preventDefault()
+      const index = historyIndex()
+      if (key.name === "up") {
+        applyHistory(index === -1 ? history.length - 1 : Math.max(0, index - 1))
+      } else if (index !== -1) {
+        applyHistory(index + 1 >= history.length ? -1 : index + 1)
+      }
+      return
+    }
     if ((key.name === "up" || key.name === "down") && current?.options.length) {
       key.preventDefault()
       const delta = key.name === "up" ? -1 : 1
       moveSelection(delta)
       return
     }
-    const items = completions()
     if ((key.name === "up" || key.name === "down") && items.length) {
       key.preventDefault()
       const delta = key.name === "up" ? -1 : 1
@@ -278,7 +338,8 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
     }
     if (key.name === "return" && items.length) {
       key.preventDefault()
-      acceptCompletion()
+      const entry = completeFromList(items, commandSelected())
+      if (entry) completeAndMaybeRun(entry)
       return
     }
     if (key.name === "escape") {
@@ -428,7 +489,7 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
                   onMouseOver={() => setCommandSelected(index())}
                   onMouseUp={() => {
                     if (entry.mode === "command") {
-                      void execute(entry.insert)
+                      completeAndMaybeRun(entry)
                     } else {
                       setInputValue(entry.insert)
                       input.value = entry.insert
@@ -474,6 +535,7 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
             onInput={(value: string) => {
               setInputValue(value)
               setCommandSelected(0)
+              if (!suppressingHistoryInput) setHistoryIndex(-1)
             }}
            onSubmit={(submitted: unknown) => {
              const value = typeof submitted === "string" ? submitted : input.value
@@ -491,7 +553,7 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
       <box height={2} flexShrink={0} paddingLeft={4} paddingRight={3} paddingTop={1} flexDirection="row">
         <text fg={colors.subtle}>{currentTool() ? "tool" : "home"}</text>
         <text flexGrow={1} />
-        <text fg={colors.subtle}>/ commands   ↑↓ select   tab/enter complete   enter run</text>
+        <text fg={colors.subtle}>/ commands   ↑↓ 选择/历史   tab/enter 补全   enter 执行</text>
       </box>
     </box>
   )

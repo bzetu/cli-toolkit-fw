@@ -55,6 +55,8 @@ The MCP server in `src/server/mcp.ts` is a hand-written stdio JSON-RPC loop with
 
 A command may declare an optional `completeArgs(args, partial)` method that returns `CompletionItem[]`. When the user has typed a command name followed by a space, the framework calls this method to produce argument-aware Tab completions. The method receives the already-completed arguments and the partial token currently being typed. It must be synchronous; extensions that need cached data should preload it in `onEnter`.
 
+A command may also declare optional `args` metadata (`CommandArg[]`: `name` / `required` / `description`). The interactive UI uses it together with the completion-candidate check to decide when a completed command is ready to run: after `Enter` completes an item, the command executes only when no further candidates appear and every declared argument slot (including optional ones) is filled; otherwise the UI keeps waiting for further input, so optional slots like a numeric amount still get a chance to be filled. Commands without `args` metadata rely on the candidate check alone.
+
 ## Extension boundary
 
 Normal customization should only touch:

@@ -9,7 +9,8 @@ export function usageText(name: string): string {
   ${name} --help                   显示本帮助
 
 交互界面说明：
-  输入 / 查看当前作用域命令；↑↓ 选择补全项，Tab 或 Enter 补全选中项，
+  输入 / 查看当前作用域命令；↑↓ 有补全菜单时选择补全项、无菜单时切换历史输入；
+  Tab 补全选中项；Enter 补全选中项，补齐后没有更多可补且声明参数已填完则直接执行；
   无补全菜单时按 Enter 执行命令；Esc 关闭菜单或清空输入；/exit 退出。
 `
 }

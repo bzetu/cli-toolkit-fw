@@ -16,7 +16,8 @@ describe("usage text", () => {
   })
 
   test("documents the interactive completion behavior", () => {
-    expect(text).toContain("Tab 或 Enter 补全选中项")
+    expect(text).toContain("Tab 补全选中项")
+    expect(text).toContain("补齐后没有更多可补且声明参数已填完则直接执行")
     expect(text).toContain("无补全菜单时按 Enter 执行命令")
   })
 })

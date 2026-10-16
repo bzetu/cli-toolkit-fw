@@ -41,6 +41,12 @@ export type CompletionItem = {
   description?: string
 }
 
+export type CommandArg = {
+  name: string
+  required?: boolean
+  description?: string
+}
+
 export type Command = {
   id: string
   name: string
@@ -49,6 +55,7 @@ export type Command = {
   description: string
   scope: "global" | "home" | string
   run(context: CommandContext, args: string[]): Promise<CommandResult> | CommandResult
+  args?: CommandArg[]
   completeArgs?(args: string[], partial: string): CompletionItem[]
 }
 

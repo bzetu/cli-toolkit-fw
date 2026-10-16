@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file. Versions follow Semantic Versioning.
 
+## [1.1.0] - 2026-10-16
+
+### Added
+
+- Command-level `args` metadata (`CommandArg[]`: `name` / `required` / `description`) in `src/core/types.ts`. Commands may declare how many required arguments they expect; `completeArgs` stays the source of completion candidates and remains compatible.
+- Input history: with no completion menu and no selection list open, `↑` / `↓` now cycle through previously entered commands (`↑` recalls older input, `↓` returns toward the newest or an empty input). The history keeps the last 100 unique entries.
+
+### Changed
+
+- In the interactive UI, `Enter` with an active completion menu completes the selected item; the command runs immediately only when completion leaves no further candidates and every declared argument slot (including optional ones, per the new `args` metadata) is filled. No-argument commands like `/tools` now complete and run in one `Enter`; argument commands like `/autosign suoxie` also run in one `Enter`, while commands with remaining slots — e.g. `/quota` after provider+account still leaves room for the optional numeric amount — keep waiting until the user presses `Enter` again with no menu. `Tab` remains pure completion. Commands without `args` metadata rely on the candidate check alone.
+- `codex-provider` commands now declare `args`: `autosign` (one optional target), `quota` and `quota-reset` (provider + account required).
+- README, `docs/COMMAND_API.md`, `docs/ARCHITECTURE.md`, and `--help` text updated for the new `Enter` behavior, the `args` metadata, and the `↑` / `↓` input history.
+
 ## [1.0.1] - 2026-10-09
 
 ### Added
@@ -90,6 +103,7 @@ All notable changes to this project are documented in this file. Versions follow
 - Initial OpenCode-style interactive CLI framework.
 - Tool and command contracts, scoped navigation, command completion, selections, tables, logging, tests, and cross-platform installation scripts.
 
+[1.1.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v1.1.0
 [1.0.1]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v1.0.1
 [1.0.0]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v1.0.0
 [0.2.3]: https://github.com/bzetu/cli-toolkit-fw/releases/tag/v0.2.3

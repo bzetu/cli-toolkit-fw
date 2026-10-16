@@ -85,6 +85,10 @@ export const demoCommand = defineCommand({
   name: "demo",
   title: "补全示例",
   description: "演示参数 Tab 补全",
+  args: [
+    { name: "provider", required: true, description: "Provider 名" },
+    { name: "count", required: false, description: "数量，缺省为 1" },
+  ],
   completeArgs(args, partial): CompletionItem[] {
     if (args.length === 0) {
       return providers
@@ -102,7 +106,9 @@ export const demoCommand = defineCommand({
 
 `completeArgs` receives the already-completed `args` and the `partial` token the user is currently typing. It must be **synchronous** — preload any async data (e.g. local config files) in `onEnter` and cache it module-level so `completeArgs` can read it instantly.
 
-When a completion menu is open, `Tab` and `Enter` both accept the highlighted item into the input box; the command runs only when no menu is open and the user presses `Enter` again. This prevents accidentally running a command without its arguments.
+When a completion menu is open, `Tab` accepts the highlighted item into the input box without running it. `Enter` accepts the item and then checks whether more input is needed: if no further candidates are available after completion and every declared argument slot (including optional ones) is filled, the command runs immediately; otherwise the UI keeps waiting so the user can fill remaining slots (e.g. `/tools` completes and runs in one `Enter`, while `/quota` waits for the account candidate after the provider is filled, and after the account is filled it still waits for the optional numeric amount — pressing `Enter` again with no menu runs the query). Commands without `args` metadata rely on the candidate check alone — a completed item auto-runs only when no further completion menu appears. This prevents accidentally running a command mid-argument while keeping single-step execution for no-argument commands.
+
+For AI callers the `args` metadata is informational only: an MCP tool call always passes the exact `args` array supplied by the client.
 
 ## External processes
 
