@@ -41,7 +41,10 @@ export type KeyUsage = {
 }
 
 export type TeamStatusData = {
+  /** 统计更新时间（每小时自动刷新）——团队指标对比区块的缓存时间。 */
   updateTime: string
+  /** 额度校验与使用明细更新时间——刷新按钮重算完成的时刻，Key 使用数据的真实时间戳。 */
+  detailUpdateTime: string
   period: string
   keys: KeyUsage[]
   teamMetrics?: TeamMetrics
@@ -65,6 +68,8 @@ export type LeaderboardInfo = {
   generatedAt: string
   sortKey: string
   limit: string
+  /** How often the platform regenerates this cache, shown to set expectations. */
+  cacheNote: string
   totalRows: number
   rows: LeaderboardRow[]
   myRow?: LeaderboardRow
@@ -307,7 +312,11 @@ export function parseTeamUsageHtml(html: string): TeamStatusData | null {
   const periodMatch = html.match(
     /<span[^>]*>统计范围<\/span>\s*<strong[^>]*>(.*?)<\/strong>/,
   )
+  // 额度校验与使用明细更新时间是刷新按钮（POST refresh-details）重算完成的时刻，
+  // 反映 Key 使用明细与额度校验数据的真实新鲜度；统计更新时间则是团队指标的小时级缓存时间。
+  const detailTimeMatch = html.match(/额度校验与使用明细更新时间：([^<]+)/)
   const updateTime = updateTimeMatch ? updateTimeMatch[1].trim() : "—"
+  const detailUpdateTime = detailTimeMatch ? detailTimeMatch[1].trim() : "—"
   const period = periodMatch ? periodMatch[1].trim() : "—"
 
   const usageByApiKey = parseUsageDetailRows(html)
@@ -363,6 +372,7 @@ export function parseTeamUsageHtml(html: string): TeamStatusData | null {
 
   return {
     updateTime,
+    detailUpdateTime,
     period,
     keys,
     teamMetrics: parseTeamMetrics(html) ?? undefined,
@@ -405,7 +415,87 @@ export function parseLeaderboardHtml(html: string, username?: string): Leaderboa
   if (rows.length === 0) return null
 
   const myRow = username ? rows.find((row) => row.username === username) : undefined
-  return { period, generatedAt, sortKey, limit, totalRows: rows.length, rows, myRow }
+  return {
+    period,
+    generatedAt,
+    sortKey,
+    limit,
+    cacheNote: "每 4 小时自动刷新",
+    totalRows: rows.length,
+    rows,
+    myRow,
+  }
+}
+
+/** Format an ISO timestamp as a local date (YYYY-MM-DD), like the web page's
+ *  最近活跃 column. */
+function formatIsoDate(iso: string): string {
+  const date = new Date(iso)
+  if (isNaN(date.getTime())) return iso || "—"
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+/** Current month for the leaderboard API's statMonth parameter (YYYY-MM). */
+function currentStatMonth(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+}
+
+/** Parse the /api/leaderboard JSON response (hourly cache) into LeaderboardInfo.
+ *  Rank is derived from position; the JSON itself has no rank field. */
+export function parseLeaderboardJson(text: string, username?: string): LeaderboardInfo | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return null
+  }
+  const obj = raw as {
+    data?: unknown
+    sort?: unknown
+    limit?: unknown
+    statMonth?: unknown
+    generatedAtDisplay?: unknown
+  }
+  if (!Array.isArray(obj.data)) return null
+
+  const rows: LeaderboardRow[] = []
+  for (const item of obj.data) {
+    const entry = item as Record<string, unknown>
+    const name = typeof entry.username === "string" ? entry.username.trim() : ""
+    if (!name) continue
+    const lines = Number(entry.total_lines_changed ?? 0)
+    const tokens = Number(entry.total_tokens ?? 0)
+    rows.push({
+      rank: `#${rows.length + 1}`,
+      username: name,
+      requestCount: String(Number(entry.total_requests ?? 0)),
+      promptTokens: String(Number(entry.total_tokens_in ?? 0)),
+      completionTokens: String(Number(entry.total_tokens_out ?? 0)),
+      totalTokens: String(tokens),
+      codeLines: String(lines),
+      tokensPerCodeLine: lines > 0 ? (tokens / lines).toFixed(1) : "—",
+      totalCost: String(Number(entry.total_cost ?? 0)),
+      lastActive: formatIsoDate(typeof entry.last_activity === "string" ? entry.last_activity : ""),
+    })
+  }
+  if (rows.length === 0) return null
+
+  const statMonth = typeof obj.statMonth === "string" ? obj.statMonth : ""
+  const myRow = username ? rows.find((row) => row.username === username) : undefined
+  return {
+    period: statMonth ? `${statMonth} 月度统计` : "—",
+    generatedAt: typeof obj.generatedAtDisplay === "string" ? obj.generatedAtDisplay : "—",
+    sortKey: typeof obj.sort === "string" ? obj.sort : "—",
+    limit: obj.limit !== undefined ? String(obj.limit) : String(rows.length),
+    cacheNote: "每小时自动刷新",
+    totalRows: rows.length,
+    rows,
+    myRow,
+  }
 }
 
 /** Format the status data as a readable text block. */
@@ -416,7 +506,7 @@ export function formatStatusText(
 ): string {
   const lines: string[] = [
     `统计范围: ${data.period}`,
-    `统计更新时间: ${data.updateTime}`,
+    `额度校验与使用明细更新时间: ${data.detailUpdateTime}`,
   ]
 
   const displayName = leaderboard?.myRow?.username ?? username
@@ -439,7 +529,7 @@ export function formatStatusText(
     } else {
       lines.push(`排名: 未进入前 ${leaderboard.limit} 名（当前榜单共 ${leaderboard.totalRows} 人）`)
     }
-    lines.push(`数据口径: ${leaderboard.period}，缓存生成时间 ${leaderboard.generatedAt}`)
+    lines.push(`数据口径: ${leaderboard.period}，缓存生成时间 ${leaderboard.generatedAt}（${leaderboard.cacheNote}）`)
   }
 
   lines.push("", "── 我的 Key 使用 ──")
@@ -469,6 +559,7 @@ export function formatStatusText(
     lines.push(`团队人数: ${m.teamMembers}    公司团队平均人数: ${m.avgTeamMembers}`)
     lines.push(`团队人均花费: ${formatMoney(m.perCapitaCost)}    公司人均花费: ${formatMoney(m.avgPerCapitaCost)}`)
     lines.push(`团队人均token消耗: ${formatNumberShort(m.perCapitaTokens)}    公司人均token消耗: ${formatNumberShort(m.avgPerCapitaTokens)}`)
+    lines.push(`统计更新时间: ${data.updateTime}（每小时自动刷新，团队指标为缓存数据）`)
   }
 
   return lines.join("\n")
@@ -513,8 +604,20 @@ export class HttpStatusError extends Error {
   }
 }
 
+/** Error thrown when the server redirects a request (usually to the login
+ *  page, meaning the token is no longer valid). */
+export class AuthRedirectError extends Error {
+  constructor() {
+    super("认证已失效（响应被重定向到登录页）")
+    this.name = "AuthRedirectError"
+  }
+}
+
 /** Classify a page-fetch failure (HTTP status or network error) into a readable message. */
 export function describePageFetchError(error: unknown): string {
+  if (error instanceof AuthRedirectError) {
+    return `${error.message}，请在 cyoucode 客户端重新登录`
+  }
   if (error instanceof HttpStatusError) {
     if (error.status === 401 || error.status === 403) {
       return `认证失败 (HTTP ${error.status})，认证已过期，请在 cyoucode 客户端重新登录`
@@ -524,12 +627,23 @@ export function describePageFetchError(error: unknown): string {
   return describeFetchError(error)
 }
 
-/** Fetch a page as text with a timeout. Throws HttpStatusError on non-OK responses. */
-async function fetchHtml(url: string, timeoutMs: number): Promise<string> {
+/** Short reason phrase for inline staleness notes. */
+function shortFetchReason(error: unknown): string {
+  if (error instanceof AuthRedirectError) return "认证失效"
+  if (error instanceof HttpStatusError) return `返回 HTTP ${error.status}`
+  if (error instanceof Error && error.name === "AbortError") return "超时"
+  return "网络错误"
+}
+
+/** Fetch a URL as text with a timeout. Throws HttpStatusError on non-OK
+ *  responses and AuthRedirectError when the server redirects to a login page
+ *  (mirrors the web page's own `!response.ok || response.redirected` check). */
+async function fetchText(url: string, timeoutMs: number, method: "GET" | "POST"): Promise<string> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(url, { method: "GET", signal: controller.signal })
+    const response = await fetch(url, { method, signal: controller.signal })
+    if (response.redirected) throw new AuthRedirectError()
     if (!response.ok) {
       throw new HttpStatusError(response.status)
     }
@@ -539,12 +653,87 @@ async function fetchHtml(url: string, timeoutMs: number): Promise<string> {
   }
 }
 
+type TeamUsageHtmlResult = {
+  html: string
+  /** Set when the real-time refresh failed and the cached page is served. */
+  freshnessNote: string | null
+}
+
+/** Fetch the team-usage page HTML with real-time data.
+ *  Mirrors the web page's 刷新额度校验与使用明细 button exactly: POST
+ *  /api/team-usage/refresh-details with the page's query string recomputes the
+ *  usage-detail and budget tables and returns the fully refreshed page (the
+ *  browser then merely reloads — the POST response already carries fresh data;
+ *  the recompute takes ~4s in practice, 60s timeout as headroom). On non-auth
+ *  failures, falls back to the cached page GET and returns a note explaining
+ *  the data may be stale. Auth failures (401/403/redirect) and total failures
+ *  are thrown. */
+async function fetchTeamUsageHtml(serverUrl: string, query: string): Promise<TeamUsageHtmlResult> {
+  const refreshUrl = `${serverUrl}/api/team-usage/refresh-details?${query}`
+  const pageUrl = `${serverUrl}/team-usage?${query}`
+  try {
+    const html = await fetchText(refreshUrl, 60_000, "POST")
+    return { html, freshnessNote: null }
+  } catch (error) {
+    if (error instanceof AuthRedirectError) throw error
+    if (error instanceof HttpStatusError && (error.status === 401 || error.status === 403)) throw error
+    const reason = shortFetchReason(error)
+    const html = await fetchText(pageUrl, 10_000, "GET")
+    return {
+      html,
+      freshnessNote: `实时刷新${reason}，已回退到缓存页面，Key 数据以“额度校验与使用明细更新时间”为准`,
+    }
+  }
+}
+
+type LeaderboardResult = {
+  info: LeaderboardInfo | null
+  note: string | null
+}
+
+/** Fetch leaderboard data. The platform has no manual refresh for it, so the
+ *  freshest source is the hourly-refreshed /api/leaderboard JSON cache (same
+ *  parameters as the web page's filters); on failure, falls back to the
+ *  4-hour cached HTML page. Never throws; failures are reported as notes. */
+async function fetchLeaderboardInfo(serverUrl: string, rawToken: string, username: string): Promise<LeaderboardResult> {
+  const params = new URLSearchParams({
+    token: rawToken,
+    sort: "total_requests",
+    limit: "100",
+    includeZero: "false",
+    project: "team_usage",
+    leaderboardMode: "monthly",
+    statMonth: currentStatMonth(),
+    tokenPrice: "0",
+  })
+  try {
+    const text = await fetchText(`${serverUrl}/api/leaderboard?${params.toString()}`, 10_000, "GET")
+    const info = parseLeaderboardJson(text, username)
+    if (info) return { info, note: null }
+  } catch {
+    // Fall back to the cached HTML page below.
+  }
+  try {
+    const html = await fetchText(`${serverUrl}/leaderboard?token=${encodeURIComponent(rawToken)}`, 10_000, "GET")
+    const info = parseLeaderboardHtml(html, username)
+    return {
+      info,
+      note: info
+        ? "排行榜实时接口不可用，已回退到 4 小时缓存页面"
+        : "排行榜页面解析失败，未找到排行数据",
+    }
+  } catch (error) {
+    return { info: null, note: `排行榜数据获取失败：${describePageFetchError(error)}` }
+  }
+}
+
 /** Fetch the latest personal usage status.
- *  Requests the team-usage page (scope=my-keys, per-key stats) and the
- *  leaderboard page (company-wide ranking) in parallel, parses both, and
- *  returns a formatted text block. The team-usage page is required; if the
- *  leaderboard page fails, the remaining data is still returned with a
- *  failure note appended. */
+ *  Runs the real-time team-usage refresh (the same POST as the web page's
+ *  刷新额度校验与使用明细 button — Key usage details and budget validation
+ *  are recomputed on every call) and the leaderboard fetch in parallel, then
+ *  parses both and returns a formatted text block. Team metrics and the
+ *  leaderboard come from the platform's hourly caches (no manual refresh
+ *  exists for either). Staleness and failures are reported as notes. */
 export async function fetchTeamStatus(): Promise<string> {
   let auth: AuthInfo
   try {
@@ -558,38 +747,39 @@ export async function fetchTeamStatus(): Promise<string> {
     return expiredTokenMessage(auth.expiresAt!)
   }
 
-  const token = encodeURIComponent(auth.token)
-  const teamUsageUrl = `${auth.serverUrl}/team-usage?token=${token}&scope=my-keys`
-  const leaderboardUrl = `${auth.serverUrl}/leaderboard?token=${token}`
+  const encodedToken = encodeURIComponent(auth.token)
+  const teamUsageQuery = `token=${encodedToken}&scope=my-keys`
 
   const [teamUsageResult, leaderboardResult] = await Promise.allSettled([
-    fetchHtml(teamUsageUrl, 10_000),
-    fetchHtml(leaderboardUrl, 10_000),
+    fetchTeamUsageHtml(auth.serverUrl, teamUsageQuery),
+    fetchLeaderboardInfo(auth.serverUrl, auth.token, auth.username),
   ])
 
   if (teamUsageResult.status === "rejected") {
     return describePageFetchError(teamUsageResult.reason)
   }
 
-  const data = parseTeamUsageHtml(teamUsageResult.value)
+  const data = parseTeamUsageHtml(teamUsageResult.value.html)
   if (!data) {
     return "解析数据失败，未找到使用明细"
   }
 
-  let leaderboard: LeaderboardInfo | null = null
-  let leaderboardError: string | null = null
-  if (leaderboardResult.status === "fulfilled") {
-    leaderboard = parseLeaderboardHtml(leaderboardResult.value, auth.username)
-    if (!leaderboard) {
-      leaderboardError = "排行榜页面解析失败，未找到排行数据"
-    }
-  } else {
-    leaderboardError = describePageFetchError(leaderboardResult.reason)
+  const notes: string[] = []
+  if (teamUsageResult.value.freshnessNote) {
+    notes.push(teamUsageResult.value.freshnessNote)
   }
 
-  let text = formatStatusText(data, leaderboard, auth.username)
-  if (leaderboardError) {
-    text += `\n\n（排行榜数据获取失败：${leaderboardError}）`
+  const leaderboardInfo =
+    leaderboardResult.status === "fulfilled" ? leaderboardResult.value.info : null
+  if (leaderboardResult.status === "fulfilled") {
+    if (leaderboardResult.value.note) notes.push(leaderboardResult.value.note)
+  } else {
+    notes.push(`排行榜数据获取失败：${describePageFetchError(leaderboardResult.reason)}`)
+  }
+
+  let text = formatStatusText(data, leaderboardInfo, auth.username)
+  if (notes.length > 0) {
+    text += `\n\n（${notes.join("；")}）`
   }
   return text
 }

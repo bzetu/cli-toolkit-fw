@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test"
 import {
   parseTeamUsageHtml,
   parseLeaderboardHtml,
+  parseLeaderboardJson,
   formatStatusText,
   formatTokenCount,
   describeFetchError,
   describePageFetchError,
   expiredTokenMessage,
   HttpStatusError,
+  AuthRedirectError,
   type TeamStatusData,
   type LeaderboardInfo,
 } from "../status"
@@ -44,6 +46,14 @@ const teamUsageHtml = `<!doctype html>
       </tbody>
     </table>
   </section>
+
+  <p class="section-description" id="teamUsageCacheStatus" aria-live="polite">
+    统计数据每小时自动刷新，首次查询新的时间范围可能需要等待。
+  </p>
+  <div class="section-header">
+    <p class="section-description">额度校验与使用明细更新时间：2026-10-19 11:30:12 CST</p>
+    <button type="button" id="refreshUsageDetails" data-refresh-endpoint="/api/team-usage/refresh-details">刷新额度校验与使用明细</button>
+  </div>
 
   <section class="data-section budget-upgrade-section">
     <table id="budget-upgrade-table" class="data-table">
@@ -248,6 +258,12 @@ describe("describeFetchError", () => {
 })
 
 describe("describePageFetchError", () => {
+  test("redirected responses report invalid auth", () => {
+    expect(describePageFetchError(new AuthRedirectError())).toBe(
+      "认证已失效（响应被重定向到登录页），请在 cyoucode 客户端重新登录",
+    )
+  })
+
   test("HTTP 401/403 report expired auth", () => {
     expect(describePageFetchError(new HttpStatusError(401))).toBe(
       "认证失败 (HTTP 401)，认证已过期，请在 cyoucode 客户端重新登录",
@@ -302,6 +318,7 @@ describe("parseTeamUsageHtml", () => {
     const data = parseTeamUsageHtml(teamUsageHtml)
     expect(data).not.toBeNull()
     expect(data!.updateTime).toBe("2026-10-19 11:26:49 CST")
+    expect(data!.detailUpdateTime).toBe("2026-10-19 11:30:12 CST")
     expect(data!.period).toBe("2026-10 月度统计")
     expect(data!.keys.length).toBe(1)
 
@@ -384,6 +401,7 @@ describe("parseTeamUsageHtml", () => {
     const data = parseTeamUsageHtml(minimalHtml)
     expect(data).not.toBeNull()
     expect(data!.updateTime).toBe("—")
+    expect(data!.detailUpdateTime).toBe("—")
     expect(data!.period).toBe("—")
     expect(data!.keys[0].requestCount).toBe("500")
     expect(data!.keys[0].currentBudget).toBe("—")
@@ -399,6 +417,7 @@ describe("parseLeaderboardHtml", () => {
     expect(info!.generatedAt).toBe("2026-10-19 10:00:50 CST")
     expect(info!.sortKey).toBe("total_requests")
     expect(info!.limit).toBe("100")
+    expect(info!.cacheNote).toBe("每 4 小时自动刷新")
     expect(info!.totalRows).toBe(3)
     expect(info!.myRow).toBeDefined()
     expect(info!.myRow!.rank).toBe("#2")
@@ -424,6 +443,87 @@ describe("parseLeaderboardHtml", () => {
   })
 })
 
+describe("parseLeaderboardJson", () => {
+  const leaderboardJson = JSON.stringify({
+    data: [
+      {
+        username: "user-a",
+        total_requests: 24535,
+        total_tokens_in: 958678572,
+        total_tokens_out: 15162237,
+        total_tokens: 973840809,
+        total_cost: 0,
+        total_lines_changed: 9814,
+        last_activity: "2026-10-19T06:27:39.399000+00:00",
+      },
+      {
+        username: "tester",
+        total_requests: 592,
+        total_tokens_in: 81083632,
+        total_tokens_out: 445566,
+        total_tokens: 81529198,
+        total_cost: 0,
+        total_lines_changed: 4148,
+        last_activity: "2026-10-19T05:49:42.309000+00:00",
+      },
+    ],
+    sort: "total_requests",
+    limit: 100,
+    statMonth: "2026-10",
+    generatedAtDisplay: "2026-10-19 14:00:54 CST",
+  })
+
+  test("parses entries, derives rank and matches the current user", () => {
+    const info = parseLeaderboardJson(leaderboardJson, "tester")
+    expect(info).not.toBeNull()
+    expect(info!.period).toBe("2026-10 月度统计")
+    expect(info!.generatedAt).toBe("2026-10-19 14:00:54 CST")
+    expect(info!.sortKey).toBe("total_requests")
+    expect(info!.limit).toBe("100")
+    expect(info!.cacheNote).toBe("每小时自动刷新")
+    expect(info!.totalRows).toBe(2)
+
+    expect(info!.rows[0].rank).toBe("#1")
+    expect(info!.rows[0].username).toBe("user-a")
+    expect(info!.rows[0].requestCount).toBe("24535")
+    expect(info!.rows[0].tokensPerCodeLine).toBe("99229.8")
+
+    expect(info!.myRow).toBeDefined()
+    expect(info!.myRow!.rank).toBe("#2")
+    expect(info!.myRow!.username).toBe("tester")
+    expect(info!.myRow!.requestCount).toBe("592")
+    expect(info!.myRow!.promptTokens).toBe("81083632")
+    expect(info!.myRow!.completionTokens).toBe("445566")
+    expect(info!.myRow!.totalTokens).toBe("81529198")
+    expect(info!.myRow!.codeLines).toBe("4148")
+    expect(info!.myRow!.tokensPerCodeLine).toBe("19655.1")
+    expect(info!.myRow!.lastActive).toBe("2026-10-19")
+  })
+
+  test("leaves myRow undefined when the user is not listed", () => {
+    const info = parseLeaderboardJson(leaderboardJson, "nobody")
+    expect(info).not.toBeNull()
+    expect(info!.myRow).toBeUndefined()
+  })
+
+  test("shows an em-dash per-line value when code lines are zero", () => {
+    const json = JSON.stringify({
+      data: [{ username: "user-a", total_requests: 10, total_tokens: 1000, total_lines_changed: 0 }],
+      limit: 100,
+    })
+    const info = parseLeaderboardJson(json)
+    expect(info!.rows[0].tokensPerCodeLine).toBe("—")
+    expect(info!.period).toBe("—")
+  })
+
+  test("returns null for invalid JSON, non-array data and empty data", () => {
+    expect(parseLeaderboardJson("not json")).toBeNull()
+    expect(parseLeaderboardJson(JSON.stringify({ data: "nope" }))).toBeNull()
+    expect(parseLeaderboardJson(JSON.stringify({ data: [] }))).toBeNull()
+    expect(parseLeaderboardJson(JSON.stringify({ data: [{ no_username: true }] }))).toBeNull()
+  })
+})
+
 describe("formatStatusText", () => {
   const statusData: TeamStatusData = parseTeamUsageHtml(teamUsageHtml)!
 
@@ -432,7 +532,7 @@ describe("formatStatusText", () => {
     const text = formatStatusText(statusData, leaderboard, "tester")
 
     expect(text).toContain("统计范围: 2026-10 月度统计")
-    expect(text).toContain("统计更新时间: 2026-10-19 11:26:49 CST")
+    expect(text).toContain("额度校验与使用明细更新时间: 2026-10-19 11:30:12 CST")
     expect(text).toContain("用户名: tester")
 
     expect(text).toContain("── 排行榜（公司） ──")
@@ -444,7 +544,7 @@ describe("formatStatusText", () => {
     expect(text).toContain("代码处理行数: 2690")
     expect(text).toContain("每行代码消耗 Token: 26269.2")
     expect(text).toContain("最近活跃: 2026-10-16")
-    expect(text).toContain("数据口径: 2026-10 月度统计，缓存生成时间 2026-10-19 10:00:50 CST")
+    expect(text).toContain("数据口径: 2026-10 月度统计，缓存生成时间 2026-10-19 10:00:50 CST（每 4 小时自动刷新）")
 
     expect(text).toContain("── 我的 Key 使用 ──")
     expect(text).toContain("Key: tester-key（aaa111…zzz）")
@@ -462,6 +562,7 @@ describe("formatStatusText", () => {
     expect(text).toContain("团队人数: 25    公司团队平均人数: 11.3")
     expect(text).toContain("团队人均花费: $21.01    公司人均花费: $32.91")
     expect(text).toContain("团队人均token消耗: 1.27亿    公司人均token消耗: 2.25亿")
+    expect(text).toContain("统计更新时间: 2026-10-19 11:26:49 CST（每小时自动刷新，团队指标为缓存数据）")
   })
 
   test("skips the leaderboard cost column (server reports 0.0000 for everyone)", () => {
