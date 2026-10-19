@@ -1,79 +1,194 @@
-﻿import { describe, expect, test } from "bun:test"
-import { parseTeamUsageHtml, formatStatusText, formatTokenCount, describeFetchError, expiredTokenMessage, type TeamStatusData } from "../status"
+import { describe, expect, test } from "bun:test"
+import {
+  parseTeamUsageHtml,
+  parseLeaderboardHtml,
+  formatStatusText,
+  formatTokenCount,
+  describeFetchError,
+  describePageFetchError,
+  expiredTokenMessage,
+  HttpStatusError,
+  type TeamStatusData,
+  type LeaderboardInfo,
+} from "../status"
 
-const sampleHtml = `<!doctype html>
+/** Sample team-usage page (scope=my-keys, key-centric layout). */
+const teamUsageHtml = `<!doctype html>
 <html>
-<head><title>Cyou AI</title></head>
+<head><title>CyouAPI 项目</title></head>
 <body>
-  <div class="meta-item">
-    <span>统计范围</span>
-    <strong>2026-09 月度统计</strong>
-  </div>
-  <div class="meta-item">
-    <span>使用明细记录</span>
-    <strong>1</strong>
-  </div>
-  <div class="meta-item">
-    <span>统计更新时间（每小时自动刷新）</span>
-    <strong>2026-09-10 09:51:46 CST</strong>
-  </div>
+  <section class="meta-info">
+    <div class="meta-item"><span>当前邮箱</span><strong>tester@example.com</strong></div>
+    <div class="meta-item"><span>当前统计范围</span><strong>我的 Key（1 个）</strong></div>
+    <div class="meta-item"><span>我的 Key</span><strong>1</strong></div>
+    <div class="meta-item"><span>统计范围</span><strong>2026-10 月度统计</strong></div>
+    <div class="meta-item"><span>使用明细记录</span><strong>1</strong></div>
+    <div class="meta-item"><span>统计更新时间（每小时自动刷新）</span><strong>2026-10-19 11:26:49 CST</strong></div>
+  </section>
 
-  <table id="budget-upgrade-table">
-    <thead><tr>
-      <th>成员</th><th>API Key</th><th>当前额度（$）</th><th>本月花费（$）</th>
-      <th>本月缓存占比</th><th>本月代码行数</th><th>目标额度（$）</th>
-      <th>校验结果</th><th>操作</th>
-    </tr></thead>
-    <tbody>
-      <tr>
-        <td>jiangcheng_m</td>
-        <td>48d771…fdc1mm-蒋程</td>
-        <td>120</td>
-        <td>87.48</td>
-        <td>91.26%</td>
-        <td>3386</td>
-        <td>150</td>
-        <td>本月花费需达到 $110</td>
-        <td>申请提升至 $150</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <table id="usage-detail-table">
-    <thead><tr>
-      <th>排名</th><th>用户名</th><th>团队</th><th>请求次数</th><th>总花费（$）</th>
-      <th>花费占比</th><th>总 Tokens(个)</th><th>Prompt Tokens</th>
-      <th>平均请求长度</th><th>Completion Tokens</th><th>Cached Tokens</th>
-      <th>缓存占比</th><th>超长请求数</th><th>代码处理行数</th>
-    </tr></thead>
-    <tbody>
-      <tr>
-        <td>1</td><td>jiangcheng_m</td><td>中台-平台</td><td>1579</td>
-        <td>87.48</td><td>17.17%</td><td>158737870</td><td>157689359</td>
-        <td>99,866.6</td><td>1048511</td><td>143905426</td><td>91.26%</td>
-        <td>0</td><td>3386</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <section class="team-metric-comparison-section">
-    <table class="data-table">
+  <section class="data-section my-keys-section">
+    <table class="data-table" id="my-keys-table">
       <thead><tr>
-        <th>指标</th><th>本团队（中台-平台）</th><th>团队平均</th>
+        <th>API Key</th><th>Key 名称</th><th>绑定团队（user_alias）</th>
+        <th>来源</th><th>添加时间</th><th>操作</th>
       </tr></thead>
       <tbody>
-        <tr><td>团队人数</td><td>24</td><td>11</td></tr>
-        <tr><td>每千行代码Token消耗</td><td>45,208,509.39</td><td>53,078,949.57</td></tr>
-        <tr><td>人均代码处理行数</td><td>2,814.21</td><td>4,498.91</td></tr>
-        <tr><td>代码处理行数</td><td>67541</td><td>60,686</td></tr>
-        <tr><td>人均token消耗</td><td>127,226,163.88</td><td>224,774,657.05</td></tr>
+        <tr>
+          <td>aaa111…zzz</td>
+          <td>tester-key</td>
+          <td>中台-测试</td>
+          <td>手动添加</td>
+          <td>2026-10-19 10:17</td>
+          <td>清除</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="data-section budget-upgrade-section">
+    <table id="budget-upgrade-table" class="data-table">
+      <thead><tr>
+        <th>团队</th><th>API Key</th><th>当前额度（$）</th><th>本月花费（$）</th>
+        <th>本月缓存占比</th><th>本月代码行数</th><th>目标额度（$）</th>
+        <th>校验结果</th><th>操作</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>中台-测试</td>
+          <td>aaa111…zzztester-key</td>
+          <td>150</td>
+          <td>9.2</td>
+          <td>97.32%</td>
+          <td>2690</td>
+          <td>—</td>
+          <td>已达到最高额度</td>
+          <td>已达最高</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="data-section usage-detail-section">
+    <table id="usage-detail-table" class="data-table">
+      <thead><tr>
+        <th>排名</th><th>API Key</th><th>Key 名称</th><th>团队</th><th>请求次数</th>
+        <th>总花费（$）</th><th>花费占比</th><th>总 Tokens(个)</th><th>Prompt Tokens</th>
+        <th>平均请求长度</th><th>Completion Tokens</th><th>Cached Tokens</th>
+        <th>缓存占比</th><th>超长请求数</th><th>代码处理行数</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>1</td><td>aaa111…zzz</td><td>tester-key</td><td>中台-测试</td><td>504</td>
+          <td>9.2</td><td>100%</td><td>70664175</td><td>70342362</td>
+          <td>139,568.18</td><td>321813</td><td>68460267</td><td>97.32%</td>
+          <td>0</td><td>2690</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="data-section team-metric-comparison-section">
+    <table class="data-table">
+      <thead><tr>
+        <th>指标</th><th>本团队（中台-测试）</th><th>团队平均</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>团队人数</td><td>25</td><td>11.3</td></tr>
         <tr><td>人均API花费（$）</td><td>21.01</td><td>32.91</td></tr>
-        <tr><td>请求次数</td><td>21000</td><td>16,528</td></tr>
-        <tr><td>总花费（$）</td><td>504.28</td><td>305.3</td></tr>
-        <tr><td>团队预算（$）</td><td>2,293</td><td>997.37</td></tr>
-        <tr><td>额度使用率</td><td>21.99%</td><td>29.23%</td></tr>
-        <tr><td>总 Tokens(个)</td><td>3053427933</td><td>2,318,349,662</td></tr>
-        <tr><td>平均请求长度</td><td>144,563.88</td><td>124,477.51</td></tr>
+        <tr><td>人均token消耗</td><td>127,226,163.88</td><td>224,774,657.05</td></tr>
+      </tbody>
+    </table>
+  </section>
+</body>
+</html>`
+
+/** Two-key variant: the second key has a budget row but no usage row. */
+const multiKeyHtml = teamUsageHtml
+  .replace(
+    `<tr>
+          <td>aaa111…zzz</td>
+          <td>tester-key</td>
+          <td>中台-测试</td>
+          <td>手动添加</td>
+          <td>2026-10-19 10:17</td>
+          <td>清除</td>
+        </tr>`,
+    `<tr>
+          <td>aaa111…zzz</td>
+          <td>tester-key</td>
+          <td>中台-测试</td>
+          <td>手动添加</td>
+          <td>2026-10-19 10:17</td>
+          <td>清除</td>
+        </tr>
+        <tr>
+          <td>bbb222…yyy</td>
+          <td>second-key</td>
+          <td>中台-测试</td>
+          <td>手动添加</td>
+          <td>2026-10-18 09:00</td>
+          <td>清除</td>
+        </tr>`,
+  )
+  .replace(
+    `<tr>
+          <td>中台-测试</td>
+          <td>aaa111…zzztester-key</td>
+          <td>150</td>
+          <td>9.2</td>
+          <td>97.32%</td>
+          <td>2690</td>
+          <td>—</td>
+          <td>已达到最高额度</td>
+          <td>已达最高</td>
+        </tr>`,
+    `<tr>
+          <td>中台-测试</td>
+          <td>aaa111…zzztester-key</td>
+          <td>150</td>
+          <td>9.2</td>
+          <td>97.32%</td>
+          <td>2690</td>
+          <td>—</td>
+          <td>已达到最高额度</td>
+          <td>已达最高</td>
+        </tr>
+        <tr>
+          <td>中台-测试</td>
+          <td>bbb222…yyysecond-key</td>
+          <td>80</td>
+          <td>10.5</td>
+          <td>90.00%</td>
+          <td>100</td>
+          <td>120</td>
+          <td>本月花费需达到 $60</td>
+          <td>申请提升</td>
+        </tr>`,
+  )
+
+/** Sample leaderboard page. */
+const leaderboardHtml = `<!doctype html>
+<html>
+<head><title>Cyou AI 排行榜</title></head>
+<body>
+  <section class="meta-info">
+    <span>当前排序：<strong>total_requests</strong></span>
+    <span>当前限制：<strong>100</strong></span>
+    <span>当前项目：<strong>CyouAPI 用量统计</strong></span>
+    <span>排行榜统计：<strong>2026-10 月度统计</strong></span>
+    <span>缓存生成时间：<strong>2026-10-19 10:00:50 CST</strong></span>
+  </section>
+  <section class="summary-section">
+    <table>
+      <thead><tr>
+        <th>排名</th><th>用户名</th><th>请求总数</th><th>输入 Tokens</th>
+        <th>输出 Tokens</th><th>总 Tokens</th><th>代码处理行数</th>
+        <th>每行代码消耗 Token</th><th>总成本 (USD)</th><th>最近活跃</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>#1</td><td>user-a</td><td>24338</td><td>955031680</td><td>15026783</td><td>970058463</td><td>7328</td><td>132377.0</td><td>0.0000</td><td>2026-10-17</td></tr>
+        <tr><td>#2</td><td>tester</td><td>502</td><td>70342362</td><td>321813</td><td>70664175</td><td>2690</td><td>26269.2</td><td>0.0000</td><td>2026-10-16</td></tr>
+        <tr><td>#3</td><td>user-c</td><td>120</td><td>1000000</td><td>500000</td><td>1500000</td><td>300</td><td>5000.0</td><td>0.0000</td><td>2026-10-15</td></tr>
       </tbody>
     </table>
   </section>
@@ -132,6 +247,30 @@ describe("describeFetchError", () => {
   })
 })
 
+describe("describePageFetchError", () => {
+  test("HTTP 401/403 report expired auth", () => {
+    expect(describePageFetchError(new HttpStatusError(401))).toBe(
+      "认证失败 (HTTP 401)，认证已过期，请在 cyoucode 客户端重新登录",
+    )
+    expect(describePageFetchError(new HttpStatusError(403))).toBe(
+      "认证失败 (HTTP 403)，认证已过期，请在 cyoucode 客户端重新登录",
+    )
+  })
+
+  test("other HTTP statuses include the status code", () => {
+    expect(describePageFetchError(new HttpStatusError(500))).toBe(
+      "获取数据失败 (HTTP 500)",
+    )
+  })
+
+  test("non-HTTP errors fall back to network classification", () => {
+    const err = new TypeError("fetch failed", { cause: { code: "ECONNRESET" } })
+    expect(describePageFetchError(err)).toBe(
+      "连接被重置，请检查网络连接后重试",
+    )
+  })
+})
+
 describe("formatTokenCount", () => {
   test("below 1万 shows raw value", () => {
     expect(formatTokenCount("9999")).toBe("9999")
@@ -159,188 +298,199 @@ describe("formatTokenCount", () => {
 })
 
 describe("parseTeamUsageHtml", () => {
-  test("extracts all fields from sample HTML", () => {
-    const data = parseTeamUsageHtml(sampleHtml, "jiangcheng_m")
+  test("extracts per-key fields from the new key-centric layout", () => {
+    const data = parseTeamUsageHtml(teamUsageHtml)
     expect(data).not.toBeNull()
-    expect(data!.updateTime).toBe("2026-09-10 09:51:46 CST")
-    expect(data!.period).toBe("2026-09 月度统计")
-    expect(data!.username).toBe("jiangcheng_m")
-    expect(data!.team).toBe("中台-平台")
-    expect(data!.rank).toBe("1")
-    expect(data!.requestCount).toBe("1579")
-    expect(data!.totalCost).toBe("87.48")
-    expect(data!.costRatio).toBe("17.17%")
-    expect(data!.totalTokens).toBe("158737870")
-    expect(data!.promptTokens).toBe("157689359")
-    expect(data!.avgRequestLength).toBe("99,866.6")
-    expect(data!.completionTokens).toBe("1048511")
-    expect(data!.cachedTokens).toBe("143905426")
-    expect(data!.cacheRatio).toBe("91.26%")
-    expect(data!.longRequestCount).toBe("0")
-    expect(data!.codeLines).toBe("3386")
-    expect(data!.currentBudget).toBe("120")
-    expect(data!.targetBudget).toBe("150")
-    expect(data!.validationResult).toBe("本月花费需达到 $110")
+    expect(data!.updateTime).toBe("2026-10-19 11:26:49 CST")
+    expect(data!.period).toBe("2026-10 月度统计")
+    expect(data!.keys.length).toBe(1)
+
+    const key = data!.keys[0]
+    expect(key.apiKey).toBe("aaa111…zzz")
+    expect(key.keyName).toBe("tester-key")
+    expect(key.team).toBe("中台-测试")
+    expect(key.source).toBe("手动添加")
+    expect(key.addedAt).toBe("2026-10-19 10:17")
+    expect(key.requestCount).toBe("504")
+    expect(key.totalCost).toBe("9.2")
+    expect(key.costRatio).toBe("100%")
+    expect(key.totalTokens).toBe("70664175")
+    expect(key.promptTokens).toBe("70342362")
+    expect(key.avgRequestLength).toBe("139,568.18")
+    expect(key.completionTokens).toBe("321813")
+    expect(key.cachedTokens).toBe("68460267")
+    expect(key.cacheRatio).toBe("97.32%")
+    expect(key.longRequestCount).toBe("0")
+    expect(key.codeLines).toBe("2690")
+    expect(key.currentBudget).toBe("150")
+    expect(key.targetBudget).toBe("—")
+    expect(key.validationResult).toBe("已达到最高额度")
   })
 
   test("extracts team metrics from sample HTML", () => {
-    const data = parseTeamUsageHtml(sampleHtml, "jiangcheng_m")
+    const data = parseTeamUsageHtml(teamUsageHtml)
     expect(data).not.toBeNull()
     expect(data!.teamMetrics).not.toBeNull()
-    expect(data!.teamMetrics!.teamMembers).toBe("24")
-    expect(data!.teamMetrics!.avgTeamMembers).toBe("11")
+    expect(data!.teamMetrics!.teamMembers).toBe("25")
+    expect(data!.teamMetrics!.avgTeamMembers).toBe("11.3")
     expect(data!.teamMetrics!.perCapitaCost).toBe("21.01")
     expect(data!.teamMetrics!.avgPerCapitaCost).toBe("32.91")
     expect(data!.teamMetrics!.perCapitaTokens).toBe("127,226,163.88")
     expect(data!.teamMetrics!.avgPerCapitaTokens).toBe("224,774,657.05")
   })
 
-  test("returns null when usage-detail-table is missing", () => {
+  test("parses multiple keys and defaults usage fields when a key has no usage row", () => {
+    const data = parseTeamUsageHtml(multiKeyHtml)
+    expect(data).not.toBeNull()
+    expect(data!.keys.length).toBe(2)
+
+    const second = data!.keys[1]
+    expect(second.apiKey).toBe("bbb222…yyy")
+    expect(second.keyName).toBe("second-key")
+    expect(second.team).toBe("中台-测试")
+    expect(second.requestCount).toBe("—")
+    expect(second.totalCost).toBe("—")
+    expect(second.totalTokens).toBe("—")
+    expect(second.currentBudget).toBe("80")
+    expect(second.targetBudget).toBe("120")
+    expect(second.validationResult).toBe("本月花费需达到 $60")
+  })
+
+  test("returns null when neither my-keys nor usage-detail tables exist", () => {
     const html = "<html><body><div>no tables here</div></body></html>"
     expect(parseTeamUsageHtml(html)).toBeNull()
   })
 
-  test("uses first row when username not specified", () => {
-    const data = parseTeamUsageHtml(sampleHtml)
+  test("falls back to usage rows when the my-keys table is missing", () => {
+    const html = teamUsageHtml.replace(/<section class="data-section my-keys-section">[\s\S]*?<\/section>/, "")
+    const data = parseTeamUsageHtml(html)
     expect(data).not.toBeNull()
-    expect(data!.username).toBe("jiangcheng_m")
-  })
-
-  test("falls back to first row when username not found", () => {
-    const data = parseTeamUsageHtml(sampleHtml, "nonexistent_user")
-    expect(data).not.toBeNull()
-    expect(data!.username).toBe("jiangcheng_m")
+    expect(data!.keys.length).toBe(1)
+    expect(data!.keys[0].apiKey).toBe("aaa111…zzz")
+    expect(data!.keys[0].source).toBe("—")
+    expect(data!.keys[0].addedAt).toBe("—")
+    expect(data!.keys[0].requestCount).toBe("504")
   })
 
   test("returns default em-dash when meta items are missing", () => {
     const minimalHtml = `
-      <table id="budget-upgrade-table"><tbody>
-        <tr><td>user1</td><td>key</td><td>100</td><td>50</td><td>80%</td><td>1000</td><td>200</td><td>OK</td><td>btn</td></tr>
+      <table id="my-keys-table"><tbody>
+        <tr><td>key1</td><td>key-name-1</td><td>team1</td><td>manual</td><td>2026-01-01</td><td>x</td></tr>
       </tbody></table>
       <table id="usage-detail-table"><tbody>
-        <tr><td>1</td><td>user1</td><td>team1</td><td>500</td><td>50.00</td><td>10%</td><td>1000000</td><td>900000</td><td>2000</td><td>100000</td><td>800000</td><td>80%</td><td>5</td><td>2000</td></tr>
+        <tr><td>1</td><td>key1</td><td>key-name-1</td><td>team1</td><td>500</td><td>50.00</td><td>10%</td><td>1000000</td><td>900000</td><td>2000</td><td>100000</td><td>800000</td><td>80%</td><td>5</td><td>2000</td></tr>
       </tbody></table>
     `
     const data = parseTeamUsageHtml(minimalHtml)
     expect(data).not.toBeNull()
     expect(data!.updateTime).toBe("—")
     expect(data!.period).toBe("—")
-    expect(data!.username).toBe("user1")
-    expect(data!.currentBudget).toBe("100")
-    expect(data!.targetBudget).toBe("200")
-    expect(data!.validationResult).toBe("OK")
+    expect(data!.keys[0].requestCount).toBe("500")
+    expect(data!.keys[0].currentBudget).toBe("—")
     expect(data!.teamMetrics).toBeUndefined()
   })
 })
 
-describe("formatStatusText", () => {
-  test("formats data as readable text with all fields", () => {
-    const data: TeamStatusData = {
-      updateTime: "2026-09-10 09:51:46 CST",
-      period: "2026-09 月度统计",
-      username: "jiangcheng_m",
-      team: "中台-平台",
-      rank: "1",
-      requestCount: "1579",
-      totalCost: "87.48",
-      costRatio: "17.17%",
-      totalTokens: "158737870",
-      promptTokens: "157689359",
-      avgRequestLength: "99,866.6",
-      completionTokens: "1048511",
-      cachedTokens: "143905426",
-      cacheRatio: "91.26%",
-      longRequestCount: "0",
-      codeLines: "3386",
-      currentBudget: "120",
-      targetBudget: "150",
-      validationResult: "本月花费需达到 $110",
-    }
-    const text = formatStatusText(data)
-    expect(text).toContain("统计范围: 2026-09 月度统计")
-    expect(text).toContain("统计更新时间: 2026-09-10 09:51:46 CST")
-    expect(text).toContain("用户名: jiangcheng_m")
-    expect(text).toContain("团队: 中台-平台")
-    expect(text).toContain("排名: 1")
-    expect(text).toContain("请求次数: 1579")
-    expect(text).toContain("总花费: $87.48")
-    expect(text).toContain("花费占比: 17.17%")
-    expect(text).toContain("当前额度: $120")
-    expect(text).toContain("目标额度: $150")
-    expect(text).toContain("校验结果: 本月花费需达到 $110")
-    // Token counts are formatted with Chinese units
-    expect(text).toContain("总 Tokens: 1.59亿 (158737870)")
-    expect(text).toContain("Prompt Tokens: 1.58亿 (157689359)")
-    expect(text).toContain("Completion Tokens: 104.85万 (1048511)")
-    expect(text).toContain("Cached Tokens: 1.44亿 (143905426)")
-    expect(text).toContain("缓存占比: 91.26%")
-    expect(text).toContain("平均请求长度: 99,866.6")
-    expect(text).toContain("超长请求数: 0")
-    expect(text).toContain("代码处理行数: 3386")
+describe("parseLeaderboardHtml", () => {
+  test("extracts meta info, rows and the current user's row", () => {
+    const info = parseLeaderboardHtml(leaderboardHtml, "tester")
+    expect(info).not.toBeNull()
+    expect(info!.period).toBe("2026-10 月度统计")
+    expect(info!.generatedAt).toBe("2026-10-19 10:00:50 CST")
+    expect(info!.sortKey).toBe("total_requests")
+    expect(info!.limit).toBe("100")
+    expect(info!.totalRows).toBe(3)
+    expect(info!.myRow).toBeDefined()
+    expect(info!.myRow!.rank).toBe("#2")
+    expect(info!.myRow!.username).toBe("tester")
+    expect(info!.myRow!.requestCount).toBe("502")
+    expect(info!.myRow!.promptTokens).toBe("70342362")
+    expect(info!.myRow!.completionTokens).toBe("321813")
+    expect(info!.myRow!.totalTokens).toBe("70664175")
+    expect(info!.myRow!.codeLines).toBe("2690")
+    expect(info!.myRow!.tokensPerCodeLine).toBe("26269.2")
+    expect(info!.myRow!.totalCost).toBe("0.0000")
+    expect(info!.myRow!.lastActive).toBe("2026-10-16")
   })
 
-  test("includes team metrics section when present", () => {
-    const data: TeamStatusData = {
-      updateTime: "2026-09-10 09:51:46 CST",
-      period: "2026-09 月度统计",
-      username: "jiangcheng_m",
-      team: "中台-平台",
-      rank: "1",
-      requestCount: "1579",
-      totalCost: "87.48",
-      costRatio: "17.17%",
-      totalTokens: "158737870",
-      promptTokens: "157689359",
-      avgRequestLength: "99,866.6",
-      completionTokens: "1048511",
-      cachedTokens: "143905426",
-      cacheRatio: "91.26%",
-      longRequestCount: "0",
-      codeLines: "3386",
-      currentBudget: "120",
-      targetBudget: "150",
-      validationResult: "本月花费需达到 $110",
-      teamMetrics: {
-        teamMembers: "24",
-        avgTeamMembers: "11",
-        perCapitaCost: "21.01",
-        avgPerCapitaCost: "32.91",
-        perCapitaTokens: "127,226,163.88",
-        avgPerCapitaTokens: "224,774,657.05",
-      },
-    }
-    const text = formatStatusText(data)
-    expect(text).toContain("团队人数: 24    公司团队平均人数: 11")
-    
+  test("leaves myRow undefined when the user is not on the board", () => {
+    const info = parseLeaderboardHtml(leaderboardHtml, "nobody")
+    expect(info).not.toBeNull()
+    expect(info!.myRow).toBeUndefined()
+  })
+
+  test("returns null when the page has no ranking table", () => {
+    expect(parseLeaderboardHtml("<html><body>empty</body></html>", "tester")).toBeNull()
+  })
+})
+
+describe("formatStatusText", () => {
+  const statusData: TeamStatusData = parseTeamUsageHtml(teamUsageHtml)!
+
+  test("renders leaderboard, key usage and team metrics sections", () => {
+    const leaderboard = parseLeaderboardHtml(leaderboardHtml, "tester")
+    const text = formatStatusText(statusData, leaderboard, "tester")
+
+    expect(text).toContain("统计范围: 2026-10 月度统计")
+    expect(text).toContain("统计更新时间: 2026-10-19 11:26:49 CST")
+    expect(text).toContain("用户名: tester")
+
+    expect(text).toContain("── 排行榜（公司） ──")
+    expect(text).toContain("排名: #2 / 3")
+    expect(text).toContain("请求总数: 502")
+    expect(text).toContain("输入 Tokens: 7034.24万 (70342362)")
+    expect(text).toContain("输出 Tokens: 32.18万 (321813)")
+    expect(text).toContain("总 Tokens: 7066.42万 (70664175)")
+    expect(text).toContain("代码处理行数: 2690")
+    expect(text).toContain("每行代码消耗 Token: 26269.2")
+    expect(text).toContain("最近活跃: 2026-10-16")
+    expect(text).toContain("数据口径: 2026-10 月度统计，缓存生成时间 2026-10-19 10:00:50 CST")
+
+    expect(text).toContain("── 我的 Key 使用 ──")
+    expect(text).toContain("Key: tester-key（aaa111…zzz）")
+    expect(text).toContain("团队: 中台-测试")
+    expect(text).toContain("请求次数: 504")
+    expect(text).toContain("总花费: $9.2")
+    expect(text).toContain("花费占比: 100%")
+    expect(text).toContain("当前额度: $150")
+    expect(text).toContain("目标额度: —")
+    expect(text).toContain("校验结果: 已达到最高额度")
+    expect(text).toContain("Cached Tokens: 6846.03万 (68460267)")
+    expect(text).toContain("缓存占比: 97.32%")
+
+    expect(text).toContain("── 团队指标对比 ──")
+    expect(text).toContain("团队人数: 25    公司团队平均人数: 11.3")
     expect(text).toContain("团队人均花费: $21.01    公司人均花费: $32.91")
     expect(text).toContain("团队人均token消耗: 1.27亿    公司人均token消耗: 2.25亿")
   })
 
-  test("omits team metrics section when absent", () => {
-    const data: TeamStatusData = {
-      updateTime: "2026-09-10 09:51:46 CST",
-      period: "2026-09 月度统计",
-      username: "jiangcheng_m",
-      team: "中台-平台",
-      rank: "1",
-      requestCount: "1579",
-      totalCost: "87.48",
-      costRatio: "17.17%",
-      totalTokens: "158737870",
-      promptTokens: "157689359",
-      avgRequestLength: "99,866.6",
-      completionTokens: "1048511",
-      cachedTokens: "143905426",
-      cacheRatio: "91.26%",
-      longRequestCount: "0",
-      codeLines: "3386",
-      currentBudget: "120",
-      targetBudget: "150",
-      validationResult: "本月花费需达到 $110",
+  test("skips the leaderboard cost column (server reports 0.0000 for everyone)", () => {
+    const leaderboard = parseLeaderboardHtml(leaderboardHtml, "tester")
+    const text = formatStatusText(statusData, leaderboard, "tester")
+    expect(text).not.toContain("总成本")
+  })
+
+  test("reports when the user is not in the leaderboard top N", () => {
+    const leaderboard: LeaderboardInfo = {
+      ...parseLeaderboardHtml(leaderboardHtml, "nobody")!,
     }
-    const text = formatStatusText(data)
-    expect(text).not.toContain("团队人数")
-    expect(text).not.toContain("团队人均花费")
-    expect(text).not.toContain("团队人均token消耗")
+    const text = formatStatusText(statusData, leaderboard, "nobody")
+    expect(text).toContain("排名: 未进入前 100 名（当前榜单共 3 人）")
+  })
+
+  test("omits the leaderboard section when leaderboard data is unavailable", () => {
+    const text = formatStatusText(statusData, null, "tester")
+    expect(text).not.toContain("── 排行榜（公司） ──")
+    expect(text).toContain("用户名: tester")
+    expect(text).toContain("── 我的 Key 使用 ──")
+  })
+
+  test("renders one block per key when multiple keys exist", () => {
+    const multiKeyData = parseTeamUsageHtml(multiKeyHtml)!
+    const text = formatStatusText(multiKeyData, null, "tester")
+    expect(text).toContain("Key: tester-key（aaa111…zzz）")
+    expect(text).toContain("Key: second-key（bbb222…yyy）")
+    expect(text).toContain("请求次数: —")
+    expect(text).toContain("目标额度: $120")
   })
 })

@@ -4,13 +4,13 @@
 
 - **定价数据**在运行时从 cyou-code VS Code 插件的 `dist/extension.js` 内置 `cyouModels` 表动态提取，无需手动维护。
 - **倍率（inputMultiplier）与备注（note）**在运行时从 cyoucode 平台服务器 `GET /api/model-info` 接口实时获取（该接口无需鉴权）。
-- **使用状态数据**来源于 cyoucode 平台服务器。优先调用 `POST /api/team-usage/refresh-details` 接口获取最新数据（8 秒超时）；如果该接口无响应或超时，自动回退到 `GET /team-usage` 页面获取每小时自动刷新的缓存数据。从返回的 HTML 页面中解析使用明细、额度校验、团队指标等信息。
+- **使用状态数据**来源于 cyoucode 平台服务器的两个页面：`GET /team-usage?scope=my-keys`（按 Key 统计的个人使用明细、额度校验、团队指标）和 `GET /leaderboard`（公司排行榜）。两个请求并行发起（各 10 秒超时），从返回的 HTML 中解析数据并以文本输出。
 
 ## 命令
 
 ```text
 /models    显示全部模型定价表
-/status    显示个人使用状态（请求次数、花费、额度、团队指标等）
+/status    显示个人使用状态与公司排行榜排名（按 Key 的请求次数、花费、额度、团队指标等）
 /help      显示命令
 /clear     清空输出历史
 /exit      返回主页
@@ -56,18 +56,28 @@
 
 ## /status 命令
 
-执行 `/status` 后向 cyoucode 平台服务器请求数据：优先调用刷新接口获取最新数据（8 秒超时），如果超时或失败则自动回退到缓存页面（每小时自动刷新），从返回的 HTML 中解析个人使用状态数据并以文本形式输出。
+执行 `/status` 后并行请求 cyoucode 平台服务器的两个页面（各 10 秒超时），解析返回的 HTML 并以文本形式输出：
+
+- `GET {server_url}/team-usage?token={access_token}&scope=my-keys` — **主数据源**（必需）。页面为"按 Key"口径：包含"我的 Key"列表、额度提升校验、按 Key 的使用明细和团队指标对比。
+- `GET {server_url}/leaderboard?token={access_token}` — **辅助数据源**（可选）。公司排行榜（按请求总数排序，前 100 名），用于展示当前用户的排名、请求总数、输入/输出 Tokens、最近活跃等。
+
+如果排行榜请求失败或解析失败，仍会输出 team-usage 部分的数据，并在末尾附上 `（排行榜数据获取失败：…）` 提示；如果 team-usage 请求失败，则直接返回错误提示。
+
+> 旧版实现先调用 `POST /api/team-usage/refresh-details` 刷新接口再回退缓存页。该接口已失效（请求长期挂起无响应），现已移除，改为直接读取 `team-usage` 页面（每小时自动刷新）。
 
 ### 数据来源
 
 1. 从 `~/.cyoucode/cyou_auth.json` 读取 `access_token`、`server_url` 和 `username`。
-2. 优先 `POST {server_url}/api/team-usage/refresh-details?token={access_token}` — 触发数据刷新，返回包含最新数据的 HTML 页面（8 秒超时）。
-3. 如果刷新接口超时或失败，回退到 `GET {server_url}/team-usage?token={access_token}` — 获取每小时自动刷新的缓存页面（10 秒超时）。
-3. 从返回的 HTML 中解析三个数据块：
+2. 并行请求 `GET {server_url}/team-usage?token={access_token}&scope=my-keys` 和 `GET {server_url}/leaderboard?token={access_token}`（各 10 秒超时）。
+3. 从 team-usage 页面解析四个数据块（按掩码后的 API Key 关联合并）：
    - **页面元信息**：统计范围、统计更新时间
-   - **额度提升校验表**（budget-upgrade-table）：当前额度、目标额度、校验结果
-   - **使用明细表**（usage-detail-table）：请求次数、总花费、Tokens 明细等
+   - **我的 Key 表**（my-keys-table）：Key 名称、绑定团队、来源、添加时间
+   - **额度提升校验表**（budget-upgrade-table）：按 Key 的当前额度、目标额度、校验结果
+   - **使用明细表**（usage-detail-table，15 列）：按 Key 的请求次数、总花费、Tokens 明细等
    - **团队指标参考表**（无 ID）：团队人数、人均 API 花费、人均 Token 消耗（本团队 vs 团队平均）
+4. 从 leaderboard 页面解析排行榜表（排名、用户名、请求总数、输入/输出/总 Tokens、代码处理行数、每行代码消耗 Token、最近活跃），并按 `username` 匹配当前用户的行。
+
+> 排行榜页的"总成本 (USD)"列目前对所有人显示 `0.0000`（服务端未填充），输出中跳过该列，花费以 team-usage 页的按 Key 明细为准。
 
 ### Token 数字格式
 
@@ -82,32 +92,47 @@ Token 计数使用中文单位显示：
 ### 输出示例
 
 ```text
-统计范围: 2026-09 月度统计
-统计更新时间: 2026-09-10 10:53:33 CST
+统计范围: 2026-10 月度统计
+统计更新时间: 2026-10-19 11:26:49 CST
 
 用户名: jiangcheng_m
+
+── 排行榜（公司） ──
+排名: #75 / 100
+请求总数: 502
+输入 Tokens: 7034.24万 (70342362)
+输出 Tokens: 32.18万 (321813)
+总 Tokens: 7066.42万 (70664175)
+代码处理行数: 2690
+每行代码消耗 Token: 26269.2
+最近活跃: 2026-10-16
+数据口径: 2026-10 月度统计，缓存生成时间 2026-10-19 10:00:50 CST
+
+── 我的 Key 使用 ──
+Key: mm-蒋程（48d771…fdc1）
 团队: 中台-平台
-排名: 1
-请求次数: 1602
-总花费: $87.88
-花费占比: 16.93%
-当前额度: $120
-目标额度: $150
-校验结果: 本月花费需达到 $110
-
-总 Tokens: 1.61亿 (161399925)
-Prompt Tokens: 1.60亿 (160315063)
-Completion Tokens: 108.49万 (1084862)
-Cached Tokens: 1.46亿 (146405266)
-缓存占比: 91.32%
-平均请求长度: 100,071.82
+请求次数: 504
+总花费: $9.2
+花费占比: 100%
+当前额度: $150
+目标额度: —
+校验结果: 已达到最高额度
+总 Tokens: 7066.42万 (70664175)
+Prompt Tokens: 7034.24万 (70342362)
+Completion Tokens: 32.18万 (321813)
+Cached Tokens: 6846.03万 (68460267)
+缓存占比: 97.32%
+平均请求长度: 139,568.18
 超长请求数: 0
-代码处理行数: 4419
+代码处理行数: 2690
 
-团队人数: 24    公司团队平均人数: 11
-团队人均花费: $21.39    公司人均花费: $33.38
-团队人均token消耗: 1.29亿    公司人均token消耗: 2.27亿
+── 团队指标对比 ──
+团队人数: 25    公司团队平均人数: 11.3
+团队人均花费: $21.01    公司人均花费: $32.91
+团队人均token消耗: 1.27亿    公司人均token消耗: 2.25亿
 ```
+
+多个 Key 时，"我的 Key 使用"部分会为每个 Key 输出一个独立的数据块。
 
 ### Token 读取
 
@@ -115,9 +140,9 @@ Cached Tokens: 1.46亿 (146405266)
 
 | 字段 | 用途 |
 |------|------|
-| `access_token` | 请求 `/api/team-usage/refresh-details` 和 `/team-usage` 的查询参数 `token` |
+| `access_token` | 请求 `/team-usage` 和 `/leaderboard` 的查询参数 `token` |
 | `server_url` | 服务器地址（如 `http://10.1.10.42:5001`） |
-| `username` | 用于从使用明细表中筛选当前用户的数据行 |
+| `username` | 用于在 `/leaderboard` 排行榜中匹配当前用户的行 |
 
 ### 错误提示
 
@@ -132,6 +157,7 @@ Cached Tokens: 1.46亿 (146405266)
 | 连接被拒绝 | `服务器拒绝连接（可能未联网或服务不可用），请检查内网连接` |
 | 连接被重置 | `连接被重置，请检查网络连接后重试` |
 | 其他网络错误 | `网络错误 (错误码)，请检查网络连接` |
+| 排行榜请求失败（team-usage 正常） | 正常输出其余数据，末尾附 `（排行榜数据获取失败：…）` |
 
 Token 会过期（`expires_at` 字段），过期后需在 cyoucode 客户端重新登录。
 
