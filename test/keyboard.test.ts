@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { completeFromList, handleCtrlA, handleCtrlC, isCommandComplete } from "../src/ui/keyboard"
+import { completeFromList, escapeAction, handleCtrlA, handleCtrlC, inputKeptOnEscape, isCommandComplete, shouldRunWithoutCompletion } from "../src/ui/keyboard"
 
 function ctrlCKey() {
   let prevented = false
@@ -152,5 +152,62 @@ describe("argument completeness (补齐后是否可执行)", () => {
   test("ignores non-command input", () => {
     expect(isCommandComplete("plain text", withOptionalTail)).toBe(false)
     expect(isCommandComplete("", withOptionalTail)).toBe(false)
+  })
+})
+
+describe("Esc 关闭补全菜单但不清空输入", () => {
+  test("按 Esc 且补全菜单开着时，只关菜单、保留输入", () => {
+    expect(escapeAction({ hasSelection: false, hasCompletions: true, input: "/balance" }))
+      .toBe("dismiss-menu")
+  })
+
+  test("按 Esc 且没有菜单时，才清空输入", () => {
+    expect(escapeAction({ hasSelection: false, hasCompletions: false, input: "/balance" }))
+      .toBe("clear-input")
+  })
+
+  test("输入框已空且无菜单时 Esc 什么也不做", () => {
+    expect(escapeAction({ hasSelection: false, hasCompletions: false, input: "" }))
+      .toBe("none")
+  })
+
+  test("关掉菜单后同一输入不重弹，但敲了空格就重新弹出", () => {
+    // 等价于：Esc 只抑制当下这一帧，下一次输入（含删除后再敲空格）就恢复
+    expect(escapeAction({ hasSelection: false, hasCompletions: true, input: "/balance" }))
+      .toBe("dismiss-menu")
+  })
+
+  test("从未关闭过菜单时总是展示候选", () => {
+    expect(escapeAction({ hasSelection: false, hasCompletions: false, input: "" })).toBe("none")
+  })
+
+  test("Esc 保留的内容会去掉补全尾随的空格，让光标停在命令名末尾", () => {
+    expect(inputKeptOnEscape("/balance ")).toBe("/balance")
+    expect(inputKeptOnEscape("/balance")).toBe("/balance")
+    expect(inputKeptOnEscape("/balance   ")).toBe("/balance")
+    // 已输入参数时保留空格分隔的内容本身
+    expect(inputKeptOnEscape("/balance suoxie ")).toBe("/balance suoxie")
+  })
+})
+
+describe("带可选参数的命令可以直接回车执行", () => {
+  const optionalOnly = [{ name: "provider", required: false }]
+  const withRequired = [{ name: "provider", required: true }]
+
+  test("/balance 没输入参数时回车直接执行（不选候选）", () => {
+    expect(shouldRunWithoutCompletion("/balance", optionalOnly)).toBe(true)
+    expect(shouldRunWithoutCompletion("/balance ", optionalOnly)).toBe(true)
+  })
+
+  test("已经输入了参数时回车仍然走补全", () => {
+    expect(shouldRunWithoutCompletion("/balance su", optionalOnly)).toBe(false)
+  })
+
+  test("有必填参数的命令不受影响", () => {
+    expect(shouldRunWithoutCompletion("/quota", withRequired)).toBe(false)
+  })
+
+  test("未声明参数的命令不受影响", () => {
+    expect(shouldRunWithoutCompletion("/tools", undefined)).toBe(false)
   })
 })

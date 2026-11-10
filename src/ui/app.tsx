@@ -7,7 +7,7 @@ import type { Command, CommandResult, OutputTone, Route, SelectionRequest, ToolM
 import { CommandRegistry, ToolRegistry } from "../core/registry"
 import { createCoreCommands } from "../core/commands"
 import { logError } from "../platform/logger"
-import { completeFromList, handleCtrlA, handleCtrlC, isCommandComplete } from "./keyboard"
+import { completeFromList, escapeAction, handleCtrlA, handleCtrlC, inputKeptOnEscape, isCommandComplete, shouldRunWithoutCompletion } from "./keyboard"
 
 const colors = {
   background: "#0b0c0f",
@@ -61,6 +61,9 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
   const [inputValue, setInputValue] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [selection, setSelection] = createSignal<SelectionRequest>()
+  // Esc 只抑制「当下这一帧」的菜单，不记忆任何输入内容。
+  // 用户随后按任何键（包括删除后再敲空格）都会重新弹出。
+  const [completionsSuppressed, setCompletionsSuppressed] = createSignal(false)
   const [selected, setSelected] = createSignal(0)
   const [commandSelected, setCommandSelected] = createSignal(0)
   const [inputHistory, setInputHistory] = createSignal<string[]>([])
@@ -89,6 +92,7 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
   }
 
   const completions = createMemo((): CompletionEntry[] => {
+    if (completionsSuppressed()) return []
     if (selection()) return []
     if (historyIndex() !== -1) return []
     const value = inputValue()
@@ -97,6 +101,9 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
 
     if (!rest.includes(" ")) {
       const query = rest.trim().toLowerCase()
+      // 完整命令名同样列候选（用户期望输入 /balance 就能看到菜单）。
+      // 回车是否需要绕过补全由 shouldRunWithoutCompletion 判断，
+      // 不在这里隐式改变菜单行为。
       return commands()
         .filter((command) =>
           [command.name, ...(command.aliases ?? [])].some((name) => name.toLowerCase().startsWith(query)),
@@ -337,20 +344,47 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
       return
     }
     if (key.name === "return" && items.length) {
+      // 参数全部可选、且用户还没输入参数时，回车直接执行（等同「不传参数」），
+      // 不把第一个候选默默填进去，否则无法使用默认范围（如 /balance 查全部）。
+      const command = registry.find(scope(), inputValue().trim().slice(1).split(/\s+/)[0] ?? "")
+      if (shouldRunWithoutCompletion(inputValue(), command?.args)) {
+        key.preventDefault()
+        void execute(inputValue().trim())
+        return
+      }
       key.preventDefault()
       const entry = completeFromList(items, commandSelected())
       if (entry) completeAndMaybeRun(entry)
       return
     }
     if (key.name === "escape") {
-      if (current) {
+      const action = escapeAction({
+        hasSelection: Boolean(current),
+        hasCompletions: completions().length > 0,
+        input: inputValue(),
+      })
+      if (action === "dismiss-menu") {
         key.preventDefault()
-        setSelection(undefined)
-      } else if (inputValue()) {
+        if (current) {
+          setSelection(undefined)
+        } else {
+          // 只关菜单，保留用户已输入的指令。
+          // 若末尾带着补全产生的空格，一并去掉，使光标回到命令名末尾。
+          const kept = inputKeptOnEscape(inputValue())
+          if (kept !== inputValue()) {
+            setInputValue(kept)
+            input.value = kept
+            input.cursorOffset = kept.length
+          }
+          // 只抑制当前这一帧；下一次按键（包括再敲空格）会重新弹出
+          setCompletionsSuppressed(true)
+        }
+      } else if (action === "clear-input") {
         key.preventDefault()
         setInputValue("")
         input.value = ""
       }
+      return
     }
   })
 
@@ -535,6 +569,8 @@ export function App(props: { appName: string; tools: ToolModule[]; cwd: string }
             onInput={(value: string) => {
               setInputValue(value)
               setCommandSelected(0)
+              // 任何输入（包括删除、再敲空格）都重新允许弹出补全菜单
+              if (completionsSuppressed()) setCompletionsSuppressed(false)
               if (!suppressingHistoryInput) setHistoryIndex(-1)
             }}
            onSubmit={(submitted: unknown) => {
